@@ -1,22 +1,22 @@
 # Phase 1 검증 기록
 
-검증일: 2026-10-22. 기능 소스 커밋: `e73bf40b6f04b684a5df3d70da644f672bd62677`.
+검증일: 2026-10-22. 기능 소스 커밋: `0ba0ba9273f9e80aa2177ef7ade93ce48049fd35`.
 
 ## 빌드 / JVM
 
-[GitHub Actions 실행](https://github.com/woojik01/my-live2d/actions/runs/39743282869)에서 다음 명령이 성공했다.
+[GitHub Actions 실행](https://github.com/woojik01/my-live2d/actions/runs/39744549761)에서 다음 명령이 성공했다.
 
 ```
 ./gradlew --no-daemon :core:test :app:assembleDebug :app:lintDebug :app:assembleDebugAndroidTest
 ```
 
-- JVM 테스트 10개, 실패 0, 무시 0 (보고서 기준 0.432초).
-- 디버그 APK 9,773,854바이트, 테스트 APK 1,116,325바이트 생성.
+- JVM 테스트 10개, 실패 0, 무시 0.
+- 디버그 APK 9,773,854바이트, 테스트 APK 1,116,481바이트 생성.
 - 다운로드한 APK를 Android SDK `apksigner verify --verbose`로 검증: APK v2 서명 유효.
 - lint 오류 0, 경고 17. 경고는 최신 target SDK/의존성 버전 권고, 창 너비 API 권고, data extraction rules, Int 상태 전용 타입, XML용 View 생성자, SharedPreferences KTX 권고다. 경고를 숨기는 baseline/전체 suppress는 사용하지 않았다.
 - 현재 의존성은 재현성을 위해 고정한 버전이며 최신 버전이라는 뜻은 아니다. 버전 업그레이드와 API 36 이상 검증은 별도 변경에서 수행한다.
 
-[APK + JVM/lint 보고서 아티팩트](https://github.com/woojik01/my-live2d/actions/runs/39743282869/artifacts/12409394281). ZIP 안의 `app/build/outputs/apk/debug/app-debug.apk`가 설치 대상이다. 아티팩트 보관 기한은 2026-11-05다.
+[APK + JVM/lint 보고서 아티팩트](https://github.com/woojik01/my-live2d/actions/runs/39744549761/artifacts/12410881981). ZIP 안의 `app/build/outputs/apk/debug/app-debug.apk`가 설치 대상이다. 아티팩트 보관 기한은 2026-11-05다.
 
 ## JVM에서 실행해 통과한 항목
 
@@ -31,11 +31,21 @@
 | 잘못된 프로젝트 | 미지원 버전·잘못된 인덱스·NaN·잘못된 키폼·이미지 크기 거부 |
 | 손상 / 누락 | 손상 JSON/ZIP, 누락 PNG, 경로 탈출, 메타데이터 용량 초과 거부 |
 
-## Android 계측
+## Android 계측 — 5개 통과
 
-Android 15 (API 35), x86_64 에뮬레이터의 첫 실행에서 화면 회전/Activity 재생성 테스트와 PNG→편집→저장→OpenGL 개폐 픽셀 비교 테스트가 통과했다. 저장소 테스트 클래스는 한 테스트의 반환형이 Boolean으로 추론되어 JUnit 초기화가 실패했다. 테스트를 명시적 Unit 반환형으로 수정하고 전체 계측 테스트를 재실행한다. 전체 통과로 집계하지 않는다.
+Android 15 (API 35), x86_64 에뮬레이터에서 **5개 실행, 실패 0**. 연결 계측 테스트 명령은 `:app:connectedDebugAndroidTest`이며 Actions가 성공으로 종료됐다.
 
-소스에 포함된 테스트는 실제 PNG 디코딩/두 파츠 저장/Repository 재생성 후 다시 열기, 손상된 최신 저장본의 백업 복구, 잘못된 PNG 거부, 화면 회전과 Activity 재생성, ViewModel을 통한 새 프로젝트·다중 PNG·메쉬 편집·레이어 순서·Undo/Redo·키폼 생성·저장 및 OpenGL 결과 픽셀 변화를 검증한다. 계측 결과가 나오기 전에는 통과로 집계하지 않는다.
+[Android 계측 보고서](https://github.com/woojik01/my-live2d/actions/runs/39744549761/artifacts/12410833029)
+
+| 테스트 | 확인한 결과 |
+|---|---|
+| pngImportTwoEyesRigSaveReopen | 실제 PNG 두 개 디코딩, 두 눈 리깅, 내부 저장 후 새 Repository에서 동일 프로젝트 복원 |
+| backupRecoveryAfterCorruptLatestSave | 최신 ZIP 손상 시 백업 복구, 다시 저장한 뒤 재손상해도 정상 백업 복구 |
+| malformedPngFailsWithoutWritingProject | 잘못된 PNG가 예외로 거부됨 |
+| canvasAndToolbarSurviveActivityRecreation | 가로 방향 요청과 Activity 재생성 후 Compose 캔버스·툴바 표시 |
+| glTextureAndBlinkChangeVisiblePixels | 새 프로젝트 → ViewModel API로 다중 PNG 가져오기 → 정점 편집/Undo/Redo → 레이어 순서/Undo → 두 눈 키폼 → 저장 → 화면 종료 후 새 Activity/ViewModel에서 파일 복원 → 실제 OpenGL 텍스처 표시 및 닫힘 상태 픽셀 면적 감소 |
+
+마지막 테스트는 합성한 청록색 눈 이미지의 실제 스크린샷 픽셀을 비교한다. 파일·ViewModel·렌더러 경로를 연결해서 검사한 결과이며 사람이 파일 선택기나 터치 제스처를 수동으로 조작한 테스트로 표시하지 않는다. 스크린샷 파일은 테스트 종료 시 앱 제거로 수거되지 않았으므로 아티팩트에 포함됐다고 보고하지 않는다. 픽셀 비교 assertion은 계측 보고서에서 통과했다.
 
 ## 수행하지 않은 검증 / 제한
 

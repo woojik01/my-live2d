@@ -13,7 +13,7 @@ Cubism SDK나 독점 파일 포맷을 사용하지 않습니다. `.mylive2d`는 
 - Windows: `gradlew.bat :core:test :app:assembleDebug :app:lintDebug`
 - APK: `app/build/outputs/apk/debug/app-debug.apk`
 - [GitHub Actions](https://github.com/woojik01/my-live2d/actions) → 성공한 Android Phase 1 실행 → `my-live2d-phase1-debug` 아티팩트
-- 디버그 APK는 개발 검증용이며 스토어 배포 서명이 아닙니다.
+- 디버그 APK는 개발 검증용입니다. CI 실행별 디버그 서명키를 사용하므로 버전 교체 전에 `.mylive2d` 프로젝트를 내보내 보관하세요.
 
 Gradle 8.11.1 / AGP 8.9.2 / Kotlin 2.1.20 / Compose BOM 2025.04.01로 재현 가능하도록 고정했습니다. 최신 버전이라는 의미는 아닙니다. 호환성과 변경 범위를 확인하며 별도로 업데이트합니다.
 
@@ -66,7 +66,7 @@ Gradle 8.11.1 / AGP 8.9.2 / Kotlin 2.1.20 / Compose BOM 2025.04.01로 재현 가
 
 ## 검증
 
-실제 실행 결과 및 미검증 항목은 [검증 보고서](docs/VALIDATION.md)를 참조하세요. 소스에 테스트가 있다는 사실과 통과했다는 사실을 구분합니다.
+검증 완료: JVM 10개와 Android 15 에뮬레이터 계측 5개 통과, 디버그 APK 빌드 성공. lint 오류 0 / 경고 17. 실물 기기 수동 테스트는 수행하지 않았습니다. [APK 다운로드](https://github.com/woojik01/my-live2d/actions/runs/39744549761/artifacts/12410881981) · [검증 보고서](docs/VALIDATION.md).
 
 - JVM: `./gradlew :core:test`
 - Android 에뮬레이터/기기: `./gradlew :app:connectedDebugAndroidTest`
