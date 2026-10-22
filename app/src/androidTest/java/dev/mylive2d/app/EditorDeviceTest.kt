@@ -15,7 +15,7 @@ import java.io.File
 /** Device/emulator tests; these are not JVM test results. */
 @RunWith(AndroidJUnit4::class)
 class EditorDeviceTest {
-    @Test fun pngImportTwoEyesRigSaveReopen() = runBlocking {
+    @Test fun pngImportTwoEyesRigSaveReopen() = runBlocking<Unit> {
         val context=ApplicationProvider.getApplicationContext<Context>(); val repo=ProjectRepository(context)
         val image=File(context.cacheDir,"eye-test.png")
         val bitmap=Bitmap.createBitmap(128,64,Bitmap.Config.ARGB_8888)
@@ -31,7 +31,7 @@ class EditorDeviceTest {
         assertEquals(p,reopened)
         repo.delete(p.id); image.delete()
     }
-    @Test fun backupRecoveryAfterCorruptLatestSave() = runBlocking {
+    @Test fun backupRecoveryAfterCorruptLatestSave() = runBlocking<Unit> {
         val context=ApplicationProvider.getApplicationContext<Context>(); val repo=ProjectRepository(context)
         val original=Project(name="Backup original")
         repo.save(original); repo.save(original.copy(name="Latest"))

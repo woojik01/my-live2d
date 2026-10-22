@@ -17,7 +17,7 @@ import java.io.File
 
 @RunWith(AndroidJUnit4::class)
 class RenderDeviceTest {
-    @Test fun glTextureAndBlinkChangeVisiblePixels() = runBlocking {
+    @Test fun glTextureAndBlinkChangeVisiblePixels() = runBlocking<Unit> {
         val context=ApplicationProvider.getApplicationContext<Context>(); val repo=ProjectRepository(context)
         val oldActive=repo.active
         val image=File(context.cacheDir,"render-eye.png")
@@ -25,7 +25,7 @@ class RenderDeviceTest {
         bitmap.eraseColor(android.graphics.Color.CYAN)
         image.outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG,100,it) }; bitmap.recycle()
         val instrumentation=InstrumentationRegistry.getInstrumentation()
-        val scenario=ActivityScenario.launch(MainActivity::class.java)
+        var scenario=ActivityScenario.launch(MainActivity::class.java)
         var projectId: String?=null
         try {
             fun waitReady() {
@@ -66,6 +66,11 @@ class RenderDeviceTest {
             while(!saved && attempts++<60) { scenario.onActivity { saved=!ViewModelProvider(it)[EditorViewModel::class.java].dirty }; if(!saved) Thread.sleep(100) }
             assertTrue("Explicit save completed",saved)
             assertEquals(expected,ProjectRepository(context).open(projectId!!))
+            scenario.close()
+            Thread.sleep(1000)
+            scenario=ActivityScenario.launch(MainActivity::class.java)
+            waitReady()
+            scenario.onActivity { assertEquals(expected,ViewModelProvider(it)[EditorViewModel::class.java].project) }
             Thread.sleep(700); instrumentation.waitForIdleSync()
             val open=instrumentation.uiAutomation.takeScreenshot() ?: error("Screenshot unavailable")
             val openCount=cyanPixels(open)
