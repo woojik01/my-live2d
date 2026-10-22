@@ -35,6 +35,9 @@ class EditorViewModel(app: Application): AndroidViewModel(app) {
     var dirty by mutableStateOf(false); private set
     var revision by mutableIntStateOf(0); private set
     private var gestureStart: Project? = null
+    private var rawPartPosition: Vec2? = null
+    private var rawVertexPosition: Vec2? = null
+    private var rawVertexIndex = -1
     private var saveJob: Job? = null
     private val events = Channel<String>(Channel.BUFFERED)
     val messages = events.receiveAsFlow()
@@ -45,6 +48,7 @@ class EditorViewModel(app: Application): AndroidViewModel(app) {
             try {
                 val restored = withContext(Dispatchers.IO) { repository.active?.let { repository.open(it) } }
                 if(restored != null) { setProject(restored); message(tr("자동 저장 복구 완료","Autosave restored")) }
+                else setProject(project)
             } catch(e: Exception) { failure(e) }
             finally { busy = false; refreshRecent() }
         }
@@ -176,14 +180,26 @@ class EditorViewModel(app: Application): AndroidViewModel(app) {
             if(b.partId!=part.id) b else b.keys.filter { kotlin.math.abs(it.value-p.value)>.00001f }.let { if(it.isEmpty()) null else b.copy(keys=it) }
         }) })); cancelKey()
     }
-    fun beginGesture() { gestureStart=project }
+    fun previewParameter(id: String, value: Float) {
+        if(busy || keyEditing) return
+        if(gestureStart==null) beginGesture()
+        project=project.copy(parameters=project.parameters.map { if(it.id==id) it.copy(value=value.coerceIn(it.min,it.max)) else it })
+    }
+    fun previewOpacity(value: Float) {
+        val part=selected ?: return; if(busy || part.locked) return
+        if(gestureStart==null) beginGesture()
+        project=project.copy(parts=project.parts.map { if(it.id==part.id) it.copy(opacity=value) else it })
+    }
+    fun beginGesture() { gestureStart=project; rawPartPosition=selected?.transform?.position; rawVertexPosition=null; rawVertexIndex=-1 }
     fun endGesture() {
         val initial = gestureStart ?: return; gestureStart=null
         if(initial!=project) { history.commit(project); syncHistory(); dirty=true; revision++; autosave() }
     }
     fun movePart(delta: Vec2) {
         val part=selected ?: return; if(busy || part.locked || keyEditing) return
-        var pos=part.transform.position+delta*(if(precise) .2f else 1f)
+        val raw=(rawPartPosition ?: part.transform.position)+delta*(if(precise) .2f else 1f)
+        rawPartPosition=raw
+        var pos=raw
         if(snap) pos=Vec2(kotlin.math.round(pos.x/10)*10,kotlin.math.round(pos.y/10)*10)
         project=project.copy(parts=project.parts.map { if(it.id==part.id) it.copy(transform=it.transform.copy(position=pos)) else it })
     }
@@ -192,7 +208,10 @@ class EditorViewModel(app: Application): AndroidViewModel(app) {
         val source=if(keyEditing) draft ?: return else part.mesh.vertices
         if(index !in source.indices) return
         if(!keyEditing && project.parameters.any { it.bindings.any { b -> b.partId==part.id } }) { message(tr("키폼 편집을 켜세요","Enable keyform editing")); return }
-        var pos=source[index]+delta*(if(precise) .2f else 1f)
+        if(rawVertexIndex!=index) { rawVertexIndex=index; rawVertexPosition=source[index] }
+        val raw=(rawVertexPosition ?: source[index])+delta*(if(precise) .2f else 1f)
+        rawVertexPosition=raw
+        var pos=raw
         if(snap) pos=Vec2(kotlin.math.round(pos.x/10)*10,kotlin.math.round(pos.y/10)*10)
         val points=source.mapIndexed { i,v -> if(i==index) pos else v }
         if(keyEditing) draft=points else project=project.copy(parts=project.parts.map { if(it.id==part.id) it.copy(mesh=it.mesh.copy(vertices=points)) else it })

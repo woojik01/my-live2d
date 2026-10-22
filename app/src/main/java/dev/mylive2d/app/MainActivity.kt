@@ -14,6 +14,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.input.KeyboardType
@@ -42,6 +43,7 @@ class MainActivity: ComponentActivity() {
 
 @Composable private fun EditorScreen(vm: EditorViewModel) {
     val snack=remember { SnackbarHostState() }
+    val wideScreen=LocalConfiguration.current.screenWidthDp>=850
     var left by remember { mutableStateOf(false) }; var right by remember { mutableStateOf(true) }
     var projects by remember { mutableStateOf(false) }; var help by remember { mutableStateOf(false) }
     var rename by remember { mutableStateOf(false) }; var create by remember { mutableStateOf(false) }
@@ -93,8 +95,8 @@ class MainActivity: ComponentActivity() {
             }
             HorizontalDivider()
             Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal=8.dp),verticalAlignment=Alignment.CenterVertically) {
-                TextButton(onClick={ left=!left; if(left) right=false }) { Text(vm.tr("파츠","Parts")) }
-                TextButton(onClick={ right=!right; if(right) left=false }) { Text(vm.tr("속성","Properties")) }
+                TextButton(onClick={ left=!left; if(left && !wideScreen) right=false }) { Text(vm.tr("파츠","Parts")) }
+                TextButton(onClick={ right=!right; if(right && !wideScreen) left=false }) { Text(vm.tr("속성","Properties")) }
                 TextButton(onClick={ png.launch(arrayOf("image/png")) },enabled=!vm.busy) { Text("+ PNG") }
                 FilterChip(selected=vm.meshMode,onClick={ vm.meshMode=!vm.meshMode },label={ Text(vm.tr("메쉬","Mesh")) })
                 Spacer(Modifier.width(8.dp))
@@ -172,7 +174,7 @@ private fun fit(vm: EditorViewModel,width: Float,height: Float) {
             FloatEditor(vm.tr("회전 (도)","Rotation (°)"),p.transform.rotation,enabled=!p.locked) { v -> vm.updatePart { it.copy(transform=it.transform.copy(rotation=v.coerceIn(-3600f,3600f))) } }
             FloatEditor(vm.tr("배율","Scale"),p.transform.scale,enabled=!p.locked) { v -> if(v in .01f..100f) vm.updatePart { it.copy(transform=it.transform.copy(scale=v)) } }
             Text(vm.tr("투명도","Opacity")+" ${(p.opacity*100).roundToInt()}%",style=MaterialTheme.typography.labelMedium)
-            Slider(value=p.opacity,onValueChange={ v -> vm.updatePart { it.copy(opacity=v) } },enabled=!p.locked)
+            Slider(value=p.opacity,onValueChange=vm::previewOpacity,onValueChangeFinished=vm::endGesture,enabled=!p.locked)
             OutlinedButton(onClick={ mesh=true },enabled=!p.locked) { Text(vm.tr("메쉬 생성 / 재생성","Build / rebuild mesh")) }
             Text("${p.mesh.vertices.size} "+vm.tr("정점","vertices"),style=MaterialTheme.typography.labelSmall)
             TextButton(onClick=vm::deletePart,enabled=!p.locked) { Text(vm.tr("파츠 삭제","Delete part"),color=MaterialTheme.colorScheme.error) }
@@ -184,7 +186,7 @@ private fun fit(vm: EditorViewModel,width: Float,height: Float) {
             Column(Modifier.fillMaxWidth().background(if(param.id==vm.parameterId) MaterialTheme.colorScheme.secondaryContainer else Color.Transparent).padding(5.dp).clickable { vm.selectParameter(param.id) }) {
                 Text(param.name,style=MaterialTheme.typography.labelLarge)
                 Text("${format(param.value)}  [${format(param.min)}, ${format(param.max)}]",style=MaterialTheme.typography.labelSmall)
-                Slider(value=param.value,onValueChange={ vm.parameterValue(param.id,it) },valueRange=param.min..param.max,enabled=!vm.keyEditing,modifier=Modifier.testTag("parameter-${param.id}"))
+                Slider(value=param.value,onValueChange={ vm.previewParameter(param.id,it) },onValueChangeFinished=vm::endGesture,valueRange=param.min..param.max,enabled=!vm.keyEditing,modifier=Modifier.testTag("parameter-${param.id}"))
                 if(param.id==vm.parameterId) {
                     Row {
                         TextButton(onClick={ vm.parameterValue(param.id,param.min) },enabled=!vm.keyEditing) { Text(vm.tr("최소","Min")) }
