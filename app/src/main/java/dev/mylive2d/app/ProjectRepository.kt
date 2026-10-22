@@ -97,6 +97,20 @@ class ProjectRepository(private val context: Context) {
         }
     }
     data class Imported(val asset: Asset, val name: String)
+    fun generateAlphaMesh(asset: Asset, detail: Int, threshold: Int, padding: Int): AlphaMesh.Result {
+        val bitmap = BitmapFactory.decodeFile(assetFile(asset.id).absolutePath) ?: error("Cannot decode PNG asset")
+        val alpha = try {
+            require(bitmap.width == asset.width && bitmap.height == asset.height) { "Image dimensions changed" }
+            val values = ByteArray(bitmap.width * bitmap.height)
+            val row = IntArray(bitmap.width)
+            for (y in 0 until bitmap.height) {
+                bitmap.getPixels(row,0,bitmap.width,0,y,bitmap.width,1)
+                for (x in row.indices) values[y * bitmap.width + x] = (row[x] ushr 24).toByte()
+            }
+            values
+        } finally { bitmap.recycle() }
+        return AlphaMesh.generate(asset.width,asset.height,alpha,detail,threshold,padding)
+    }
     fun importPng(uri: Uri): Imported {
         val bytes = context.contentResolver.openInputStream(uri)?.use { input ->
             val out = ByteArrayOutputStream(); val b = ByteArray(8192)

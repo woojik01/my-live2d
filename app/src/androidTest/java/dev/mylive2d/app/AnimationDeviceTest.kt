@@ -3,7 +3,11 @@ package dev.mylive2d.app
 import androidx.lifecycle.ViewModelProvider
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.onAllNodesWithTag
+import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
@@ -36,8 +40,17 @@ class AnimationDeviceTest {
                 vm.addParameter("Eye",0f,1f,1f)
                 projectId=vm.project.id
             }
+            // The preceding text-input test can leave an IME transition in the system window.
+            androidx.test.espresso.Espresso.closeSoftKeyboard()
+            compose.activityRule.scenario.onActivity { vm.message("QA feedback above timeline") }
+            compose.waitUntil(10_000) { compose.onAllNodesWithText("QA feedback above timeline").fetchSemanticsNodes().size==1 }
+            compose.onNodeWithText("QA feedback above timeline").assertIsDisplayed()
+            val feedback=compose.onNodeWithTag("editorSnackbar").fetchSemanticsNode().boundsInRoot
+            val toggle=compose.onNodeWithTag("animationTimelineToggle").fetchSemanticsNode().boundsInRoot
+            assertTrue("Feedback must stay above timeline controls",feedback.bottom<=toggle.top+1f)
             compose.onNodeWithTag("animationTimelineToggle").performClick()
-            compose.onNodeWithTag("addAnimation").performClick()
+            compose.waitUntil(5_000) { compose.onAllNodesWithTag("addAnimation").fetchSemanticsNodes().size==1 }
+            compose.onNodeWithTag("addAnimation").performScrollTo().performClick()
             compose.onNodeWithTag("animationPlayhead").assertIsDisplayed()
             compose.activityRule.scenario.onActivity { vm.addAnimationTrack(vm.parameterId!!) }
             compose.onNodeWithTag("recordAnimationKey").performClick()

@@ -71,7 +71,17 @@ class MainActivity: ComponentActivity() {
         lifecycle.addObserver(observer)
         onDispose { lifecycle.removeObserver(observer); surface.onPause() }
     }
-    Scaffold(snackbarHost={ SnackbarHost(snack) },modifier=Modifier.safeDrawingPadding()) { padding ->
+    Scaffold(snackbarHost={ SnackbarHost(snack,modifier=Modifier.testTag("editorSnackbar")) },
+        bottomBar={
+            Column {
+                AnimationTimeline(vm)
+                if(vm.keyEditing) Row(Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.secondaryContainer),verticalAlignment=Alignment.CenterVertically) {
+                    Text(vm.tr("키폼 편집 중","Editing keyform"),Modifier.weight(1f).padding(8.dp))
+                    TextButton(onClick=vm::commitKey) { Text(vm.tr("키폼 기록","Record keyform")) }
+                    TextButton(onClick=vm::cancelKey) { Text(vm.tr("취소","Cancel")) }
+                }
+            }
+        },modifier=Modifier.safeDrawingPadding()) { padding ->
         Column(Modifier.fillMaxSize().padding(padding)) {
             Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal=8.dp),verticalAlignment=Alignment.CenterVertically) {
                 TextButton(onClick={ projects=true },enabled=!vm.busy,modifier=Modifier.testTag("projectMenu")) { Text("☰") }
@@ -113,12 +123,6 @@ class MainActivity: ComponentActivity() {
                 TextButton(onClick={ vm.precise=!vm.precise }) { Text(vm.tr("정밀","Precision")+if(vm.precise) " ✓" else "") }
                 TextButton(onClick={ vm.snap=!vm.snap }) { Text(vm.tr("스냅","Snap")+if(vm.snap) " ✓" else "") }
                 TextButton(onClick={ vm.background=(vm.background+1)%3 }) { Text(vm.tr("배경","Background")) }
-            }
-            AnimationTimeline(vm)
-            if(vm.keyEditing) Row(Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.secondaryContainer),verticalAlignment=Alignment.CenterVertically) {
-                Text(vm.tr("키폼 편집 중","Editing keyform"),Modifier.weight(1f).padding(8.dp))
-                TextButton(onClick=vm::commitKey) { Text(vm.tr("키폼 기록","Record keyform")) }
-                TextButton(onClick=vm::cancelKey) { Text(vm.tr("취소","Cancel")) }
             }
         }
     }
@@ -186,6 +190,7 @@ private fun fit(vm: EditorViewModel,width: Float,height: Float,left: Float=0f,ri
 
 @Composable private fun Properties(vm: EditorViewModel) {
     var name by remember { mutableStateOf(false) }; var parameter by remember { mutableStateOf(false) }; var mesh by remember { mutableStateOf(false) }
+    var alphaMesh by remember { mutableStateOf(false) }
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(10.dp),verticalArrangement=Arrangement.spacedBy(4.dp)) {
         val p=vm.selected
         if(vm.selectedDeformer!=null) DeformerProperties(vm)
@@ -199,7 +204,8 @@ private fun fit(vm: EditorViewModel,width: Float,height: Float,left: Float=0f,ri
             FloatEditor(vm.tr("배율","Scale"),p.transform.scale,enabled=!vm.selectedLocked) { v -> if(v in .01f..100f) vm.updatePart { it.copy(transform=it.transform.copy(scale=v)) } }
             Text(vm.tr("투명도","Opacity")+" ${(p.opacity*100).roundToInt()}%",style=MaterialTheme.typography.labelMedium)
             Slider(value=p.opacity,onValueChange=vm::previewOpacity,onValueChangeFinished=vm::endGesture,enabled=!vm.selectedLocked)
-            OutlinedButton(onClick={ mesh=true },enabled=!vm.selectedLocked) { Text(vm.tr("메쉬 생성 / 재생성","Build / rebuild mesh")) }
+            OutlinedButton(onClick={ mesh=true },enabled=!vm.busy && !vm.selectedLocked && !vm.keyEditing && !vm.playing) { Text(vm.tr("격자 메쉬 생성 / 재생성","Build / rebuild grid mesh")) }
+            OutlinedButton(onClick={ alphaMesh=true },enabled=!vm.busy && !vm.selectedLocked && !vm.keyEditing && !vm.playing,modifier=Modifier.testTag("autoAlphaMesh")) { Text(vm.tr("알파 영역 자동 메쉬","Automatic alpha mesh")) }
             Text("${p.mesh.vertices.size} "+vm.tr("정점","vertices"),style=MaterialTheme.typography.labelSmall)
             Row(Modifier.horizontalScroll(rememberScrollState())) {
                 listOf(vm.tr("이동","Move"),vm.tr("정점 +","Vertex +"),vm.tr("정점 −","Vertex −")).forEachIndexed { i,label ->
@@ -242,6 +248,23 @@ private fun fit(vm: EditorViewModel,width: Float,height: Float,left: Float=0f,ri
     if(name) NameDialog(vm,vm.tr("파츠 이름","Part name"),vm.selected?.name.orEmpty(),{ name=false }) { n -> vm.updatePart { it.copy(name=n.take(120)) }; name=false }
     if(parameter) ParameterDialog(vm,{ parameter=false }) { n,min,def,max -> vm.addParameter(n,min,def,max); parameter=false }
     if(mesh) MeshDialog(vm,{ mesh=false }) { cols,rows -> vm.generateMesh(cols,rows); mesh=false }
+    if(alphaMesh) AlphaMeshDialog(vm,{ alphaMesh=false }) { detail,threshold,padding -> vm.generateAlphaMesh(detail,threshold,padding); alphaMesh=false }
+}
+
+@Composable private fun AlphaMeshDialog(vm: EditorViewModel,onDismiss: ()->Unit,onConfirm: (Int,Int,Int)->Unit) {
+    var detail by remember { mutableStateOf("16") }; var threshold by remember { mutableStateOf("1") }; var padding by remember { mutableStateOf("2") }
+    val d=detail.toIntOrNull(); val t=threshold.toIntOrNull(); val p=padding.toIntOrNull()
+    val valid=d in 4..24 && t in 1..255 && p in 0..16
+    AlertDialog(onDismissRequest=onDismiss,title={ Text(vm.tr("알파 영역 자동 메쉬","Automatic alpha mesh")) },text={
+        Column(Modifier.verticalScroll(rememberScrollState()),verticalArrangement=Arrangement.spacedBy(8.dp)) {
+            Text(vm.tr("투명한 격자 칸과 바깥 여백을 줄입니다. 윤곽은 격자 단위로 근사합니다.","Removes empty cells and outer margins. The outline follows grid cells."))
+            Text(vm.tr("이 파츠의 메쉬를 다시 만들고 메쉬 키폼을 초기화합니다. Undo로 복원할 수 있습니다.","Rebuilds this part's mesh and clears its mesh keyforms. Undo restores them."))
+            OutlinedTextField(value=detail,onValueChange={ detail=it },singleLine=true,label={ Text(vm.tr("긴 변 분할 수 (4~24)","Longest edge cells (4–24)")) },keyboardOptions=KeyboardOptions(keyboardType=KeyboardType.Number),modifier=Modifier.testTag("alphaDetail"))
+            OutlinedTextField(value=threshold,onValueChange={ threshold=it },singleLine=true,label={ Text(vm.tr("알파 기준 (1~255)","Alpha threshold (1–255)")) },keyboardOptions=KeyboardOptions(keyboardType=KeyboardType.Number),modifier=Modifier.testTag("alphaThreshold"))
+            OutlinedTextField(value=padding,onValueChange={ padding=it },singleLine=true,label={ Text(vm.tr("가장자리 여유 픽셀 (0~16)","Edge padding pixels (0–16)")) },keyboardOptions=KeyboardOptions(keyboardType=KeyboardType.Number),modifier=Modifier.testTag("alphaPadding"))
+            Text(vm.tr("알파 1은 희미한 가장자리도 포함합니다. 값을 높이면 옅은 픽셀을 제외합니다.","Threshold 1 includes faint edges. Higher values exclude faint pixels."),style=MaterialTheme.typography.bodySmall)
+        }
+    },confirmButton={ TextButton(onClick={ onConfirm(d!!,t!!,p!!) },enabled=valid,modifier=Modifier.testTag("buildAlphaMesh")) { Text(vm.tr("생성","Generate")) } },dismissButton={ TextButton(onClick=onDismiss) { Text(vm.tr("취소","Cancel")) } })
 }
 private fun format(v: Float)=String.format(java.util.Locale.ROOT,"%.2f",v)
 

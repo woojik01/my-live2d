@@ -15,6 +15,7 @@ Direct runtime/build dependencies:
 | Gradle wrapper | 8.11.1 | Apache-2.0, https://github.com/gradle/gradle/blob/v8.11.1/LICENSE |
 | Android Gradle Plugin | 8.9.2 | Apache-2.0, https://android.googlesource.com/platform/tools/base/ |
 | JUnit 4 (tests) | transitive through kotlin-test | EPL-1.0, https://github.com/junit-team/junit4/blob/main/LICENSE-junit.txt |
+| AndroidX Test (tests) | runner 1.6.2 / rules 1.6.1 / ext-junit 1.2.1 / espresso-core 3.6.1 | Apache-2.0, https://github.com/android/android-test |
 
 The APK packaging retains dependency META-INF license resources except AL2.0/LGPL2.1 boilerplate duplicates. LICENSE and this notice are also bundled as Android assets. The Android SDK is a build prerequisite distributed under its own SDK terms, not an open-source library embedded by this project. Future dependencies require separate review. CI Actions are build automation, not app runtime libraries.
 

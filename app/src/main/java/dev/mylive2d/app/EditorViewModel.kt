@@ -176,12 +176,31 @@ class EditorViewModel(app: Application): AndroidViewModel(app) {
         change(project.copy(parts=parts,assets=project.assets.filter { a -> parts.any { it.assetId==a.id } },parameters=project.parameters.map { it.copy(bindings=it.bindings.filter { b -> b.partId!=id }) }))
         select(parts.lastOrNull()?.id)
     }
-    fun generateMesh(columns: Int, rows: Int) {
-        val part = selected ?: return; if(selectedLocked) return
+    fun generateMesh(columns: Int, rows: Int) = editSafely {
+        val part = selected ?: return@editSafely; if(busy || selectedLocked || keyEditing || playing) return@editSafely
         val asset = project.assets.first { it.id == part.assetId }
         cancelKey()
-        change(project.copy(parts=project.parts.map { if(it.id != part.id) it else it.copy(mesh=Mesh.grid(asset.width.toFloat(),asset.height.toFloat(),columns,rows)) },
-            parameters=project.parameters.map { it.copy(bindings=it.bindings.filter { b -> b.partId!=part.id }) }))
+        change(MeshTopology.replace(project,part.id,Mesh.grid(asset.width.toFloat(),asset.height.toFloat(),columns,rows)))
+        selectedVertex = -1
+    }
+    fun generateAlphaMesh(detail: Int, threshold: Int, padding: Int) {
+        val part = selected ?: return
+        if(busy || selectedLocked || keyEditing || playing) return
+        val asset = project.assets.first { it.id == part.assetId }; val originalRevision = revision
+        busy = true
+        viewModelScope.launch {
+            try {
+                val result = withContext(Dispatchers.Default) { repository.generateAlphaMesh(asset,detail,threshold,padding) }
+                require(revision == originalRevision) { tr("프로젝트가 바뀌었습니다. 다시 생성하세요","The project changed. Generate the mesh again") }
+                val next = MeshTopology.replace(project,part.id,result.mesh)
+                busy = false
+                change(next)
+                if(selectedId == part.id) selectedVertex = -1
+                message(tr("자동 메쉬 생성: ","Automatic mesh: ")+"${result.mesh.vertices.size} "+tr("정점 · ","vertices · ")+"${result.activeCells}/${result.totalCells} "+tr("셀","cells"))
+            } catch(e: CancellationException) { throw e }
+            catch(e: Exception) { failure(e) }
+            finally { busy = false }
+        }
     }
     fun addParameter(name: String, min: Float, default: Float, max: Float) {
         require(name.isNotBlank() && min.isFinite() && max.isFinite() && default.isFinite() && min<max && default in min..max)
