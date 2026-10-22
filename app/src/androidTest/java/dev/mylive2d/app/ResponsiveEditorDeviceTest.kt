@@ -1,10 +1,9 @@
 package dev.mylive2d.app
 
-import androidx.compose.ui.test.assertDoesNotExist
 import androidx.compose.ui.test.assertIsDisplayed
-import androidx.compose.ui.test.fetchSemanticsNode
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.performClick
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import org.junit.Assert.assertTrue
@@ -20,7 +19,7 @@ class ResponsiveEditorDeviceTest {
     @Test fun compactLayoutKeepsCanvasWideAndShowsPanelsOnDemand() {
         assumeTrue("Compact layout check is for phone and narrow-window widths",compose.activity.resources.configuration.screenWidthDp<700)
 
-        compose.onNodeWithTag("compactEditorSheetContent").assertDoesNotExist()
+        assertEquals(0,compose.onAllNodesWithTag("compactEditorSheetContent").fetchSemanticsNodes().size)
         val screenWidth=compose.activity.window.decorView.width.toFloat()
         val canvasWidth=compose.onNodeWithTag("modelCanvas").fetchSemanticsNode().boundsInRoot.width
         assertTrue("Canvas should use nearly the full width when no panel is open",canvasWidth>=screenWidth*.88f)
@@ -28,7 +27,7 @@ class ResponsiveEditorDeviceTest {
         compose.onNodeWithTag("panelProperties").performClick()
         compose.onNodeWithTag("compactEditorSheetContent").assertIsDisplayed()
         compose.onNodeWithTag("closeCompactPanel").performClick()
-        compose.onNodeWithTag("compactEditorSheetContent").assertDoesNotExist()
+        assertEquals(0,compose.onAllNodesWithTag("compactEditorSheetContent").fetchSemanticsNodes().size)
 
         compose.onNodeWithTag("panelParts").performClick()
         compose.onNodeWithTag("compactEditorSheetContent").assertIsDisplayed()
