@@ -36,6 +36,7 @@ class AlphaMeshDeviceTest {
             ready()
             compose.activityRule.scenario.onActivity { vm.newProject("Alpha mesh QA") }; ready()
             compose.activityRule.scenario.onActivity { vm.importPng(listOf(Uri.fromFile(image))) }; ready()
+            compose.onNodeWithTag("panelProperties").performClick()
             var original: Project?=null
             compose.activityRule.scenario.onActivity {
                 projectId=vm.project.id
