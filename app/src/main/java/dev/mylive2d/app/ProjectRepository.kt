@@ -85,12 +85,13 @@ class ProjectRepository(private val context: Context) {
         context.contentResolver.openOutputStream(uri,"wt")?.use { ProjectArchive.write(p,images(p),it) } ?: error("Cannot write file")
     }
     suspend fun exportAnimationSequence(p: Project, clipId: String, size: Int, uri: Uri) = mutex.withLock {
+        val clip = AnimationSequenceExporter.validate(p,clipId,size)
         val ids = AnimationSequenceExporter.requiredAssetIds(p)
         val textures = mutableMapOf<String,Bitmap>()
         try {
             ids.forEach { id -> textures[id] = BitmapFactory.decodeFile(assetFile(id).absolutePath) ?: error("Cannot decode image asset $id") }
             val output = context.contentResolver.openOutputStream(uri,"wt") ?: error("Cannot write animation ZIP")
-            AnimationSequenceExporter.write(p,clipId,textures,size,output)
+            output.use { AnimationSequenceExporter.write(p,clip.id,textures,size,it) }
         } finally {
             textures.values.forEach { if(!it.isRecycled) it.recycle() }
         }

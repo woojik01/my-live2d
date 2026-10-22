@@ -36,6 +36,17 @@ object AnimationSequenceExporter {
         return project.parts.filter { evaluator.visible(it) && it.opacity > 0f }.map { it.assetId }.toSet()
     }
 
+    fun validate(project: Project, clipId: String, size: Int): dev.mylive2d.core.AnimationClip {
+        Validation.check(project)
+        val clip = project.animations.firstOrNull { it.id == clipId } ?: error("Animation clip not found")
+        require(clip.tracks.any { track -> track.keyframes.isNotEmpty() }) { "Record at least one animation key before exporting" }
+        require(canExport(clip.durationFrames, size)) {
+            "Export limit exceeded: choose a smaller frame size or shorten the animation"
+        }
+        require(requiredAssetIds(project).isNotEmpty()) { "The animation has no visible parts to export" }
+        return clip
+    }
+
     fun write(
         project: Project,
         clipId: String,
@@ -44,14 +55,8 @@ object AnimationSequenceExporter {
         output: OutputStream,
         onProgress: (completed: Int, total: Int) -> Unit = { _, _ -> }
     ) {
-        Validation.check(project)
-        val clip = project.animations.firstOrNull { it.id == clipId } ?: error("Animation clip not found")
-        require(clip.tracks.any { it.keyframes.isNotEmpty() }) { "Record at least one animation key before exporting" }
-        require(canExport(clip.durationFrames, size)) {
-            "Export limit exceeded: choose a smaller frame size or shorten the animation"
-        }
+        val clip = validate(project,clipId,size)
         val requiredAssets = requiredAssetIds(project)
-        require(requiredAssets.isNotEmpty()) { "The animation has no visible parts to export" }
         requiredAssets.forEach { id ->
             require(textures[id]?.isRecycled == false) { "Missing or invalid texture for asset $id" }
         }
