@@ -2,7 +2,7 @@
 
 Android 스마트폰·태블릿용 독립 2D 캐릭터 모델 편집기. Kotlin + Jetpack Compose + OpenGL ES 2.0. 핵심 편집은 오프라인으로 동작하며 INTERNET 권한과 계정/서버를 사용하지 않습니다. 자체 `.mylive2d` ZIP/JSON/PNG 포맷을 사용하고 Cubism SDK·독점 소스·공식 파일 호환을 포함하지 않습니다.
 
-Phase 3 애니메이션 구현 후 검증 중. Phase 2 검증 기록은 [여기](docs/PHASE2_VALIDATION.md), Phase 3 실제 CI 결과는 [여기](docs/PHASE3_VALIDATION.md)에 기록합니다. [Phase 1 검증 기록](docs/VALIDATION.md)은 이전 버전입니다.
+Phase 3 애니메이션과 CI 검증을 완료했습니다. Phase 2 검증 기록은 [여기](docs/PHASE2_VALIDATION.md), Phase 3 검증 결과는 [여기](docs/PHASE3_VALIDATION.md)에 기록합니다. [Phase 1 검증 기록](docs/VALIDATION.md)은 이전 버전입니다.
 
 ## 빌드 / 설치
 
@@ -12,7 +12,7 @@ Phase 3 애니메이션 구현 후 검증 중. Phase 2 검증 기록은 [여기]
 - `./gradlew :core:test :app:assembleDebug :app:lintDebug`
 - Windows: `gradlew.bat :core:test :app:assembleDebug :app:lintDebug`
 - APK: `app/build/outputs/apk/debug/app-debug.apk`
-- [Actions](https://github.com/woojik01/my-live2d/actions): 성공한 `Android editor` 실행의 `my-live2d-phase2-debug` 아티팩트에서 `app-debug.apk` 설치. 테스트용 `app-debug-androidTest.apk`는 일반 설치 대상이 아닙니다.
+- [Phase 3 Actions 실행 #26](https://github.com/woojik01/my-live2d/actions/runs/39769019566): `my-live2d-phase2-debug` 아티팩트(현재 CI 설정의 기존 이름, v0.3.0 소스에서 빌드됨)에서 `app-debug.apk`를 설치합니다. 테스트용 `app-debug-androidTest.apk`는 일반 설치 대상이 아닙니다.
 
 CI는 실행별 디버그 키를 사용합니다. 기존 버전을 삭제하기 전에 프로젝트를 `.mylive2d`로 내보내 보관하세요. v1 파일을 이 버전에서 가져올 수 있지만 새 v2 파일은 Phase 1 앱에서 열 수 없습니다.
 
