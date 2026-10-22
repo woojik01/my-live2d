@@ -47,9 +47,9 @@ class EditorViewModel(app: Application): AndroidViewModel(app) {
         viewModelScope.launch {
             try {
                 val restored = withContext(Dispatchers.IO) { repository.active?.let { repository.open(it) } }
-                if(restored != null) { setProject(restored); message(tr("자동 저장 복구 완료","Autosave restored")) }
-                else setProject(project)
-            } catch(e: Exception) { failure(e) }
+                if(restored != null) { adoptProject(restored); message(tr("자동 저장 복구 완료","Autosave restored")) }
+                else adoptProject(project)
+            } catch(e: Exception) { adoptProject(project); failure(e) }
             finally { busy = false; refreshRecent() }
         }
     }
@@ -59,7 +59,7 @@ class EditorViewModel(app: Application): AndroidViewModel(app) {
     fun message(text: String) { events.trySend(text) }
     private fun failure(e: Exception) { message(tr("작업 실패: ","Operation failed: ")+(e.message ?: e.javaClass.simpleName)) }
     private fun refreshRecent() { recent = repository.recent() }
-    private fun setProject(p: Project) {
+    private fun adoptProject(p: Project) {
         project = p; history = History(p); selectedId = p.parts.lastOrNull()?.id; parameterId = p.parameters.firstOrNull()?.id
         keyEditing = false; draft = null; gestureStart = null; camera = Camera(); dirty = false; revision++; syncHistory()
         repository.active = p.id
@@ -90,11 +90,11 @@ class EditorViewModel(app: Application): AndroidViewModel(app) {
         saveJob?.cancel(); val old = project
         withContext(Dispatchers.IO) { repository.save(old) }
         val next = Project(name = name.trim().take(120).ifBlank { tr("새 프로젝트","New project") })
-        withContext(Dispatchers.IO) { repository.save(next) }; setProject(next)
+        withContext(Dispatchers.IO) { repository.save(next) }; adoptProject(next)
     }
     fun open(id: String) = operation {
         saveJob?.cancel(); val old = project
-        val next = withContext(Dispatchers.IO) { repository.save(old); repository.open(id) }; setProject(next)
+        val next = withContext(Dispatchers.IO) { repository.save(old); repository.open(id) }; adoptProject(next)
     }
     fun deleteRecent(id: String) = operation {
         require(id != project.id) { tr("열려 있는 프로젝트는 삭제할 수 없습니다","Create/open another project before deleting this one") }
@@ -103,7 +103,7 @@ class EditorViewModel(app: Application): AndroidViewModel(app) {
     fun importProject(uri: Uri) = operation {
         saveJob?.cancel(); val old = project
         val next = withContext(Dispatchers.IO) { repository.save(old); repository.importProject(uri) }
-        withContext(Dispatchers.IO) { repository.save(next) }; setProject(next); message(tr("프로젝트 가져옴","Project imported"))
+        withContext(Dispatchers.IO) { repository.save(next) }; adoptProject(next); message(tr("프로젝트 가져옴","Project imported"))
     }
     fun export(uri: Uri) = operation {
         val p = project; withContext(Dispatchers.IO) { repository.export(p,uri) }; message(tr("프로젝트 내보내기 완료","Project exported"))

@@ -79,7 +79,7 @@ class RenderDeviceTest {
             assertTrue("Closed eye should shrink: open=$openCount closed=$closedCount",closedCount<openCount*.3)
         } finally {
             scenario.close()
-            // ON_STOP saves asynchronously; wait for the same repository lock via a short bounded pause.
+            // ON_STOP saves asynchronously; allow its tiny archive write to complete before test cleanup.
             Thread.sleep(1000)
             repo.active=oldActive
             projectId?.let { repo.delete(it) }; image.delete()
