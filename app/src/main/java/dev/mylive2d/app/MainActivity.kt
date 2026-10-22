@@ -61,7 +61,7 @@ class MainActivity: ComponentActivity() {
     DisposableEffect(lifecycle,surface) {
         val observer=LifecycleEventObserver { _,event -> when(event) {
             Lifecycle.Event.ON_RESUME -> { surface.onResume(); surface.update() }
-            Lifecycle.Event.ON_PAUSE -> surface.onPause()
+            Lifecycle.Event.ON_PAUSE -> { vm.stopPlayback(); surface.onPause() }
             Lifecycle.Event.ON_STOP -> vm.save()
             else -> Unit
         } }
@@ -76,6 +76,7 @@ class MainActivity: ComponentActivity() {
                 TextButton(onClick=vm::save,enabled=!vm.busy,modifier=Modifier.testTag("save")) { Text(vm.tr("저장","Save")) }
                 TextButton(onClick=vm::undo,enabled=vm.canUndo && !vm.busy) { Text(vm.tr("실행 취소","Undo")) }
                 TextButton(onClick=vm::redo,enabled=vm.canRedo && !vm.busy) { Text(vm.tr("다시 실행","Redo")) }
+                vm.selectedAnimation?.let { Text("${vm.animationFrame}f ${if(vm.animationPreview) "▶" else "✎"}",style=MaterialTheme.typography.labelMedium) }
                 TextButton(onClick={ help=true }) { Text("?") }
             }
             HorizontalDivider()
@@ -110,6 +111,7 @@ class MainActivity: ComponentActivity() {
                 TextButton(onClick={ vm.snap=!vm.snap }) { Text(vm.tr("스냅","Snap")+if(vm.snap) " ✓" else "") }
                 TextButton(onClick={ vm.background=(vm.background+1)%3 }) { Text(vm.tr("배경","Background")) }
             }
+            AnimationTimeline(vm)
             if(vm.keyEditing) Row(Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.secondaryContainer),verticalAlignment=Alignment.CenterVertically) {
                 Text(vm.tr("키폼 편집 중","Editing keyform"),Modifier.weight(1f).padding(8.dp))
                 TextButton(onClick=vm::commitKey) { Text(vm.tr("키폼 기록","Record keyform")) }
@@ -184,12 +186,12 @@ private fun fit(vm: EditorViewModel,width: Float,height: Float,left: Float=0f,ri
             Column(Modifier.fillMaxWidth().background(if(param.id==vm.parameterId) MaterialTheme.colorScheme.secondaryContainer else Color.Transparent).padding(5.dp).clickable { vm.selectParameter(param.id) }) {
                 Text(param.name,style=MaterialTheme.typography.labelLarge)
                 Text("${format(param.value)}  [${format(param.min)}, ${format(param.max)}]",style=MaterialTheme.typography.labelSmall)
-                Slider(value=param.value,onValueChange={ vm.previewParameter(param.id,it) },onValueChangeFinished=vm::endGesture,valueRange=param.min..param.max,enabled=!vm.keyEditing,modifier=Modifier.testTag("parameter-${param.id}"))
+                Slider(value=param.value,onValueChange={ vm.previewParameter(param.id,it) },onValueChangeFinished=vm::endGesture,valueRange=param.min..param.max,enabled=!vm.keyEditing && !vm.playing,modifier=Modifier.testTag("parameter-${param.id}"))
                 if(param.id==vm.parameterId) {
                     Row {
-                        TextButton(onClick={ vm.parameterValue(param.id,param.min) },enabled=!vm.keyEditing) { Text(vm.tr("최소","Min")) }
-                        TextButton(onClick={ vm.parameterValue(param.id,param.default) },enabled=!vm.keyEditing) { Text(vm.tr("기본","Default")) }
-                        TextButton(onClick={ vm.parameterValue(param.id,param.max) },enabled=!vm.keyEditing) { Text(vm.tr("최대","Max")) }
+                        TextButton(onClick={ vm.parameterValue(param.id,param.min) },enabled=!vm.keyEditing && !vm.playing) { Text(vm.tr("최소","Min")) }
+                        TextButton(onClick={ vm.parameterValue(param.id,param.default) },enabled=!vm.keyEditing && !vm.playing) { Text(vm.tr("기본","Default")) }
+                        TextButton(onClick={ vm.parameterValue(param.id,param.max) },enabled=!vm.keyEditing && !vm.playing) { Text(vm.tr("최대","Max")) }
                     }
                     val values=vm.keyValues(param).sorted()
                     if(values.isNotEmpty()) Text(vm.tr("키폼: ","Keyforms: ")+values.joinToString { format(it) },style=MaterialTheme.typography.labelSmall)
@@ -201,8 +203,8 @@ private fun fit(vm: EditorViewModel,width: Float,height: Float,left: Float=0f,ri
         if(vm.parameter!=null && (p!=null || vm.selectedDeformer!=null)) {
             if(p!=null) Button(onClick=vm::blink,enabled=!vm.selectedLocked && !vm.keyEditing) { Text(vm.tr("눈 개폐 키폼","Eye blink keyforms")) }
             Text(vm.tr("선택 항목에 적용 · 다른 파라미터 변형은 유지","Applies to selection · other parameters stay live"),style=MaterialTheme.typography.labelSmall)
-            OutlinedButton(onClick=vm::startKey,enabled=!vm.selectedLocked && !vm.keyEditing,modifier=Modifier.testTag("editKeyform")) { Text(vm.tr("현재 값 키폼 편집","Edit keyform at value")) }
-            TextButton(onClick=vm::deleteKey,enabled=!vm.selectedLocked && !vm.keyEditing) { Text(vm.tr("현재 값 키폼 삭제","Delete keyform at value")) }
+            OutlinedButton(onClick=vm::startKey,enabled=!vm.selectedLocked && !vm.keyEditing && !vm.playing,modifier=Modifier.testTag("editKeyform")) { Text(vm.tr("현재 값 키폼 편집","Edit keyform at value")) }
+            TextButton(onClick=vm::deleteKey,enabled=!vm.selectedLocked && !vm.keyEditing && !vm.playing) { Text(vm.tr("현재 값 키폼 삭제","Delete keyform at value")) }
         }
         if(vm.parameter!=null) TextButton(onClick=vm::deleteParameter,enabled=!vm.keyEditing) { Text(vm.tr("파라미터 삭제","Delete parameter")) }
     }

@@ -147,9 +147,9 @@ class RigDeviceTest {
         val file=File(context.filesDir,"projects/${old.id}.mylive2d"); file.parentFile!!.mkdirs()
         ZipOutputStream(file.outputStream()).use { z -> z.putNextEntry(ZipEntry("project.json")); z.write(Json.encodeToString(old).toByteArray()); z.closeEntry() }
         val original=file.readBytes(); val restored=repo.open(old.id)
-        assertEquals(2,restored.version)
+        assertEquals(3,restored.version)
         assertArrayEquals(original,File(file.parentFile,"${old.id}.v1copy").readBytes())
-        repo.save(restored); assertEquals(2,file.inputStream().use { ProjectArchive.read(it).sourceVersion })
+        repo.save(restored); assertEquals(3,file.inputStream().use { ProjectArchive.read(it).sourceVersion })
         repo.delete(old.id)
     }
     private fun findSurface(view: View): ModelSurface? {
