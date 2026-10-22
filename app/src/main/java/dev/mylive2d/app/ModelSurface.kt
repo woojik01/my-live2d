@@ -42,8 +42,10 @@ class ModelSurface(context: Context, private val vm: EditorViewModel): GLSurface
                 val selected=vm.selected; val node=vm.selectedDeformer
                 if(node!=null && eval.visible(node) && !eval.locked(node)) {
                     if(node.kind==DeformerKind.WARP && vm.meshMode) control=nearest(eval.controlWorld(node))
-                    if(control<0) rotating=nearest(listOf(eval.axisWorld(node)))==0
-                    if(control<0 && !rotating) movingPart=nearest(listOf(eval.pivotWorld(node)),36f)==0
+                    if(control<0) {
+                        val handle=nearest(listOf(eval.pivotWorld(node),eval.axisWorld(node)),32f)
+                        movingPart=handle==0; rotating=handle==1
+                    }
                 } else if(vm.meshMode && selected!=null && eval.visible(selected) && !eval.locked(selected)) {
                     val points=eval.partWorld(selected)
                     vertex=nearest(points); vm.selectedVertex=vertex

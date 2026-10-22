@@ -14,6 +14,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
@@ -43,7 +44,9 @@ class MainActivity: ComponentActivity() {
 
 @Composable private fun EditorScreen(vm: EditorViewModel) {
     val snack=remember { SnackbarHostState() }
-    val wideScreen=LocalConfiguration.current.screenWidthDp>=850
+    val screenDp=LocalConfiguration.current.screenWidthDp
+    val wideScreen=screenDp>=850
+    val density=LocalDensity.current.density
     var left by remember { mutableStateOf(false) }; var right by remember { mutableStateOf(true) }
     var projects by remember { mutableStateOf(false) }; var help by remember { mutableStateOf(false) }
     var rename by remember { mutableStateOf(false) }; var create by remember { mutableStateOf(false) }
@@ -101,7 +104,7 @@ class MainActivity: ComponentActivity() {
                 TextButton(onClick={ png.launch(arrayOf("image/png")) },enabled=!vm.busy) { Text("+ PNG") }
                 FilterChip(selected=vm.meshMode,onClick={ vm.meshMode=!vm.meshMode },label={ Text(if(vm.selectedDeformer?.kind==DeformerKind.WARP) vm.tr("격자","Grid edit") else vm.tr("메쉬","Mesh")) })
                 Spacer(Modifier.width(8.dp))
-                TextButton(onClick={ fit(vm,surface.width.toFloat(),surface.height.toFloat()) }) { Text(vm.tr("전체 보기","Fit")) }
+                TextButton(onClick={ fit(vm,surface.width.toFloat(),surface.height.toFloat(),if(left && !wideScreen) 240*density else 0f,if(right && !wideScreen) (if(screenDp<500) 196 else 250)*density else 0f) }) { Text(vm.tr("전체 보기","Fit")) }
                 TextButton(onClick={ vm.grid=!vm.grid }) { Text(vm.tr("그리드","Grid")+if(vm.grid) " ✓" else "") }
                 TextButton(onClick={ vm.precise=!vm.precise }) { Text(vm.tr("정밀","Precision")+if(vm.precise) " ✓" else "") }
                 TextButton(onClick={ vm.snap=!vm.snap }) { Text(vm.tr("스냅","Snap")+if(vm.snap) " ✓" else "") }
@@ -132,17 +135,18 @@ class MainActivity: ComponentActivity() {
         if(create) vm.newProject(name) else vm.rename(name); rename=false; create=false
     }
     if(help) AlertDialog(onDismissRequest={ help=false },title={ Text(vm.tr("빠른 시작","Quick start")) },text={ Text(vm.tr(
-        "1. + PNG로 눈 이미지 두 개를 불러옵니다.\n2. 파츠를 선택해 드래그로 배치하고 속성에서 크기·회전을 조절합니다.\n3. 파라미터를 추가하고 선택한 눈에 ‘눈 개폐 키폼’을 만듭니다. 각 눈에 반복하세요.\n4. 슬라이더 최솟값은 닫힘, 최댓값은 열림입니다.\n5. 직접 수정하려면 값을 정한 뒤 ‘키폼 편집’ → 정점 드래그 → ‘키폼 기록’을 누릅니다.\n6. 저장 후 ☰에서 .mylive2d로 내보낼 수 있습니다.\n\n두 손가락: 확대·이동 / 빈 곳 드래그: 카메라 이동\n메쉬 재생성은 해당 파츠의 기존 키폼을 지웁니다.\n자동 저장은 약 0.8초 후 적용됩니다. 미기록 키폼 초안은 저장되지 않습니다.",
-        "1. Import two eye PNGs.\n2. Select and drag parts; adjust scale and rotation in Properties.\n3. Add a parameter, then create Eye blink keyforms for each eye.\n4. Minimum closes the eye; maximum opens it.\n5. For custom shapes: set a value → Edit keyform → drag vertices → Record keyform.\n6. Save, then export .mylive2d from ☰.\n\nTwo fingers: zoom/pan. Empty area: pan.\nRebuilding a mesh removes its keyforms.\nAutosave runs after about 0.8 seconds. Unrecorded keyform drafts are not saved."
+        "1. + PNG로 눈 이미지 두 개를 불러옵니다.\n2. 파츠를 선택해 드래그로 배치하고 속성에서 크기·회전을 조절합니다.\n3. 파라미터를 추가하고 선택한 눈에 ‘눈 개폐 키폼’을 만듭니다. 각 눈에 반복하세요.\n4. 슬라이더 최솟값은 닫힘, 최댓값은 열림입니다.\n5. 직접 수정하려면 값을 정한 뒤 ‘키폼 편집’ → 정점 드래그 → ‘키폼 기록’을 누릅니다.\n6. 저장 후 ☰에서 .mylive2d로 내보낼 수 있습니다.\n\n두 손가락: 확대·이동 / 빈 곳 드래그: 카메라 이동\n메쉬 재생성은 해당 파츠의 기존 키폼을 지웁니다.\n자동 저장은 약 0.8초 후 적용됩니다. 미기록 키폼 초안은 저장되지 않습니다.\n\nPhase 2: 파츠 패널에서 + 그룹/회전/워프로 선택 요소를 감쌉니다. 다른 요소는 속성의 부모 연결로 넣으세요. 워프 격자 제어점 또는 회전 끝점을 움직이고 키폼을 기록합니다. 정점 +/− 모드는 삼각형 내부/내부 정점을 탭합니다.",
+        "1. Import two eye PNGs.\n2. Select and drag parts; adjust scale and rotation in Properties.\n3. Add a parameter, then create Eye blink keyforms for each eye.\n4. Minimum closes the eye; maximum opens it.\n5. For custom shapes: set a value → Edit keyform → drag vertices → Record keyform.\n6. Save, then export .mylive2d from ☰.\n\nTwo fingers: zoom/pan. Empty area: pan.\nRebuilding a mesh removes its keyforms.\nAutosave runs after about 0.8 seconds. Unrecorded keyform drafts are not saved.\n\nPhase 2: Parts panel → + Group/Rotate/Warp wraps the selection. Attach other elements via Parent in Properties. Drag warp controls or the rotation endpoint and record keyforms. Vertex +/− taps triangle interiors/interior vertices."
     )) },confirmButton={ TextButton(onClick={ help=false }) { Text(vm.tr("확인","OK")) } })
 }
 
-private fun fit(vm: EditorViewModel,width: Float,height: Float) {
+private fun fit(vm: EditorViewModel,width: Float,height: Float,left: Float=0f,right: Float=0f) {
     val eval=RigEvaluator(vm.renderProject)
     val points=vm.renderProject.parts.filter { eval.visible(it) }.flatMap { eval.partWorld(it) }
     if(points.isEmpty() || width<=0 || height<=0) { vm.camera=Camera(); return }
     val minX=points.minOf { it.x }; val maxX=points.maxOf { it.x }; val minY=points.minOf { it.y }; val maxY=points.maxOf { it.y }
-    vm.camera=Camera(Vec2((minX+maxX)/2,(minY+maxY)/2),min(width/(maxX-minX+100),height/(maxY-minY+100)).coerceIn(.03f,20f))
+    val zoom=min((width-left-right).coerceAtLeast(1f)/(maxX-minX+100),height/(maxY-minY+100)).coerceIn(.03f,20f)
+    vm.camera=Camera(Vec2((minX+maxX)/2-(left-right)/(2*zoom),(minY+maxY)/2),zoom)
 }
 
 @Composable private fun Layers(vm: EditorViewModel) { HierarchyPanel(vm) }

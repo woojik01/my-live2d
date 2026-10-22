@@ -146,5 +146,9 @@ class RiggingTest {
         assertFails { Validation.check(p.copy(deformers=listOf(d.copy(controls=emptyList())))) }
         val parameter=Parameter(name="Bad",deformerBindings=listOf(DeformerBinding(d.id,listOf(DeformerKeyform(1f,DeformerPose(controls=listOf(Vec2())))))))
         assertFails { Validation.check(p.copy(deformers=listOf(d),parameters=listOf(parameter))) }
+        val dense=(0..1).map { n -> val node=d.copy(id=newId(),name="Dense$n",columns=8,rows=8); node.copy(controls=node.restControls()) }
+        val many=(0 until 32).map { n -> Parameter(name="P$n",min=0f,default=0f,max=31f,
+            deformerBindings=dense.map { node -> DeformerBinding(node.id,(0..31).map { value -> DeformerKeyform(value.toFloat(),node.basePose()) }) }) }
+        assertFails { Validation.check(p.copy(deformers=dense,parameters=many)) }
     }
 }

@@ -1,6 +1,9 @@
 package dev.mylive2d.app
 
 import android.content.Context
+import android.content.ContentValues
+import android.provider.MediaStore
+import android.os.Build
 import android.graphics.Bitmap
 import android.net.Uri
 import android.os.SystemClock
@@ -41,19 +44,37 @@ class RigDeviceTest {
         try {
             waitReady(); scenario.onActivity { ViewModelProvider(it)[EditorViewModel::class.java].newProject("Phase 2 rig QA") }; waitReady()
             scenario.onActivity { ViewModelProvider(it)[EditorViewModel::class.java].importPng(listOf(Uri.fromFile(image))) }; waitReady()
-            var groupId=""; var partId=""
+            var groupId=""; var partId=""; var translationWorld=20f
             scenario.onActivity { activity ->
                 val vm=ViewModelProvider(activity)[EditorViewModel::class.java]; projectId=vm.project.id; partId=vm.selectedId!!
                 vm.addDeformer(DeformerKind.WARP); val warpId=vm.selectedDeformerId!!
                 vm.addDeformer(DeformerKind.ROTATION); val rotateId=vm.selectedDeformerId!!
                 vm.addDeformer(DeformerKind.GROUP); groupId=vm.selectedDeformerId!!
+                val surface=findSurface(activity.window.decorView) ?: error("No GL surface")
+                fun drag(world: Vec2,delta: Vec2) {
+                    val screen=vm.camera.screen(world,surface.width.toFloat(),surface.height.toFloat()); val time=SystemClock.uptimeMillis()
+                    listOf(MotionEvent.ACTION_DOWN to Vec2(),MotionEvent.ACTION_MOVE to delta,MotionEvent.ACTION_UP to delta).forEachIndexed { i,(action,offset) ->
+                        val event=MotionEvent.obtain(time,time+i*30L,action,screen.x+offset.x,screen.y+offset.y,0)
+                        surface.dispatchTouchEvent(event); event.recycle()
+                    }
+                }
+                val center=RigEvaluator(vm.project).pivotWorld(vm.selectedDeformer!!)
+                drag(center,Vec2(12f,8f))
+                assertEquals(12f,vm.selectedDeformer!!.transform.position.x,.1f)
+                assertEquals(8f,vm.selectedDeformer!!.transform.position.y,.1f)
+                assertEquals(0f,vm.selectedDeformer!!.transform.rotation,.001f)
                 vm.updateDeformerPose { it.copy(transform=Transform(Vec2(-200f,0f))) }
                 vm.addParameter("Angle",0f,0f,1f); val angle=vm.parameterId!!
                 vm.selectDeformer(rotateId); vm.parameterValue(angle,1f); vm.startKey()
                 vm.updateDeformerPose { it.copy(transform=it.transform.copy(rotation=35f)) }; vm.commitKey()
                 vm.addParameter("Warp",0f,0f,1f); val warpParameter=vm.parameterId!!
                 vm.selectDeformer(warpId); vm.parameterValue(warpParameter,1f); vm.startKey()
-                vm.updateDeformerPose { it.copy(controls=it.controls.map { p -> Vec2(p.x+8f,p.y*.7f) }) }; vm.commitKey()
+                vm.updateDeformerPose { it.copy(controls=it.controls.map { p -> Vec2(p.x+8f,p.y*.7f) }) }
+                val controlBefore=RigEvaluator(vm.renderProject).controlWorld(vm.selectedDeformer!!).first()
+                drag(controlBefore,Vec2(10f,5f))
+                val controlAfter=RigEvaluator(vm.renderProject).controlWorld(vm.selectedDeformer!!).first()
+                assertEquals(controlBefore.x+10,controlAfter.x,.15f); assertEquals(controlBefore.y+5,controlAfter.y,.15f)
+                vm.commitKey()
                 vm.addParameter("Lean",0f,0f,1f); val lean=vm.parameterId!!
                 vm.selectDeformer(rotateId); vm.parameterValue(lean,1f); vm.startKey()
                 assertEquals(0f,vm.deformerDraft!!.transform.rotation,.001f)
@@ -67,7 +88,6 @@ class RigDeviceTest {
                 vm.removeMeshVertex(25); assertEquals(25,vm.selected!!.mesh.vertices.size)
                 vm.undo(); assertEquals(26,vm.selected!!.mesh.vertices.size); vm.redo(); assertEquals(25,vm.selected!!.mesh.vertices.size)
                 vm.startKey()
-                val surface=findSurface(activity.window.decorView) ?: error("No GL surface")
                 val vertex=6; val before=RigEvaluator(vm.renderProject).partWorld(vm.selected!!)[vertex]
                 val screen=vm.camera.screen(before,surface.width.toFloat(),surface.height.toFloat())
                 val time=SystemClock.uptimeMillis()
@@ -81,16 +101,33 @@ class RigDeviceTest {
                 val after=RigEvaluator(vm.renderProject).partWorld(vm.selected!!)[vertex]
                 assertEquals(before.x+24,after.x,.15f); assertEquals(before.y+13,after.y,.15f)
                 vm.commitKey(); vm.selectDeformer(groupId)
+                val worldPoints=RigEvaluator(vm.project).partWorld(vm.project.parts.single())
+                val density=activity.resources.displayMetrics.density
+                val dp=activity.resources.configuration.screenWidthDp
+                val overlay=if(dp>=850) 0f else (if(dp<500) 196 else 250)*density
+                val available=surface.width-overlay
+                assertTrue("Visible canvas width",available>80f)
+                val minX=worldPoints.minOf { it.x }; val maxX=worldPoints.maxOf { it.x }
+                val minY=worldPoints.minOf { it.y }; val maxY=worldPoints.maxOf { it.y }
+                val zoom=minOf(1f,(available-60)/(maxX-minX),(surface.height-80)/(maxY-minY)).coerceAtLeast(.03f)
+                val targetX=available/2-10
+                vm.camera=Camera(Vec2((minX+maxX)/2-(targetX-surface.width/2)/zoom,(minY+maxY)/2),zoom)
+                translationWorld=20/zoom
+
             }
             Thread.sleep(600); instrument.waitForIdleSync()
-            val before=cyanCentroid(instrument.uiAutomation.takeScreenshot() ?: error("No screenshot"))
+            val beforeBitmap=instrument.uiAutomation.takeScreenshot() ?: error("No screenshot")
+            writeQa(context,"rig-before.png",beforeBitmap)
+            val before=cyanCentroid(beforeBitmap)
             scenario.onActivity { activity ->
                 val vm=ViewModelProvider(activity)[EditorViewModel::class.java]
-                vm.updateDeformerPose { it.copy(transform=it.transform.copy(position=it.transform.position+Vec2(40f,0f))) }
+                vm.updateDeformerPose { it.copy(transform=it.transform.copy(position=it.transform.position+Vec2(translationWorld,0f))) }
             }
             Thread.sleep(600); instrument.waitForIdleSync()
-            val after=cyanCentroid(instrument.uiAutomation.takeScreenshot() ?: error("No screenshot"))
-            assertEquals("OpenGL follows group transform",40f,after-before,4f)
+            val afterBitmap=instrument.uiAutomation.takeScreenshot() ?: error("No screenshot")
+            writeQa(context,"rig-after.png",afterBitmap)
+            val after=cyanCentroid(afterBitmap)
+            assertEquals("OpenGL follows group transform without viewport clipping",20f,after-before,3f)
             var expected: Project?=null
             scenario.onActivity { val vm=ViewModelProvider(it)[EditorViewModel::class.java]; expected=vm.project; vm.save() }
             var saved=false; var tries=0
@@ -119,6 +156,16 @@ class RigDeviceTest {
         if(view is ModelSurface) return view
         if(view is ViewGroup) for(i in 0 until view.childCount) findSurface(view.getChildAt(i))?.let { return it }
         return null
+    }
+    private fun writeQa(context: Context,name: String,bitmap: Bitmap) {
+        if(Build.VERSION.SDK_INT<29) return
+        val values=ContentValues().apply {
+            put(MediaStore.Images.Media.DISPLAY_NAME,name); put(MediaStore.Images.Media.MIME_TYPE,"image/png")
+            put(MediaStore.Images.Media.RELATIVE_PATH,"Pictures/MyLive2D-QA"); put(MediaStore.Images.Media.IS_PENDING,1)
+        }
+        val uri=context.contentResolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI,values) ?: return
+        context.contentResolver.openOutputStream(uri)?.use { bitmap.compress(Bitmap.CompressFormat.PNG,100,it) }
+        values.clear(); values.put(MediaStore.Images.Media.IS_PENDING,0); context.contentResolver.update(uri,values,null,null)
     }
     private fun cyanCentroid(bitmap: Bitmap): Float {
         val pixels=IntArray(bitmap.width*bitmap.height); val width=bitmap.width

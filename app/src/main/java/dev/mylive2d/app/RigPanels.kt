@@ -78,7 +78,7 @@ import dev.mylive2d.core.*
 @Composable internal fun DeformerProperties(vm: EditorViewModel) {
     val node=vm.selectedDeformer ?: return
     var rename by remember(node.id) { mutableStateOf(false) }; var remove by remember(node.id) { mutableStateOf(false) }
-    val pose=vm.deformerDraft ?: node.basePose()
+    val pose=vm.deformerDraft ?: Rigging.pose(vm.project,node)
     val editable=!vm.selectedLocked && (!vm.hasDeformerKeys || vm.keyEditing)
     Text(node.name,style=MaterialTheme.typography.titleMedium)
     TextButton(onClick={ rename=true },enabled=!vm.selectedLocked && !vm.keyEditing) { Text(vm.tr("이름 변경","Rename")) }

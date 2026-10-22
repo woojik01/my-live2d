@@ -182,6 +182,10 @@ object RigValidation {
             require(if(d.kind==DeformerKind.WARP) d.controls.size==(d.columns+1)*(d.rows+1) else d.controls.isEmpty())
             require(d.controls.all { it.finite() })
         }
+        val keyCount=p.parameters.sumOf { parameter -> parameter.bindings.sumOf { it.keys.size }+parameter.deformerBindings.sumOf { it.keys.size } }
+        val pointCount=p.parts.sumOf { it.mesh.vertices.size }+p.deformers.sumOf { it.controls.size }+
+            p.parameters.sumOf { parameter -> parameter.bindings.sumOf { b -> b.keys.sumOf { it.vertices.size } }+parameter.deformerBindings.sumOf { b -> b.keys.sumOf { it.pose.controls.size } } }
+        require(keyCount<=8192 && pointCount<=100_000) { "Rig memory budget exceeded (8192 keyforms / 100000 points including keyforms)" }
         p.parameters.forEach { parameter ->
             require(parameter.deformerBindings.size<=p.deformers.size && parameter.deformerBindings.map { it.deformerId }.distinct().size==parameter.deformerBindings.size)
             parameter.deformerBindings.forEach { b ->
