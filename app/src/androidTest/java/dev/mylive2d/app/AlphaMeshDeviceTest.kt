@@ -8,6 +8,7 @@ import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.lifecycle.ViewModelProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import dev.mylive2d.core.*
+import kotlinx.coroutines.runBlocking
 import org.junit.Assert.*
 import org.junit.Rule
 import org.junit.Test
@@ -18,7 +19,7 @@ import java.io.File
 class AlphaMeshDeviceTest {
     @get:Rule val compose=createAndroidComposeRule<MainActivity>()
 
-    @Test fun alphaDialogRebuildUndoRigAndSaveReopen() {
+    @Test fun alphaDialogRebuildUndoRigAndSaveReopen() = runBlocking<Unit> {
         val vm=ViewModelProvider(compose.activity)[EditorViewModel::class.java]
         val repo=vm.repository; val oldActive=repo.active
         val image=File(compose.activity.cacheDir,"alpha-mesh-test.png")
