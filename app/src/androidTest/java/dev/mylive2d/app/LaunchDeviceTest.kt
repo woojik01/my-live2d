@@ -1,5 +1,6 @@
 package dev.mylive2d.app
 
+import android.content.pm.ActivityInfo
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.assertIsDisplayed
@@ -14,6 +15,9 @@ class LaunchDeviceTest {
     @Test fun canvasAndToolbarSurviveActivityRecreation() {
         compose.onNodeWithTag("modelCanvas").assertIsDisplayed()
         compose.onNodeWithTag("save").assertIsDisplayed()
+        compose.activityRule.scenario.onActivity { it.requestedOrientation=ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE }
+        compose.waitForIdle()
+        compose.onNodeWithTag("modelCanvas").assertIsDisplayed()
         compose.activityRule.scenario.recreate()
         compose.onNodeWithTag("modelCanvas").assertIsDisplayed()
         compose.onNodeWithTag("save").assertIsDisplayed()
