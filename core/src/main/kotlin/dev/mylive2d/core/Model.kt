@@ -38,20 +38,23 @@ fun newId(): String = UUID.randomUUID().toString()
 @Serializable data class Part(
     val id: String = newId(), val name: String, val assetId: String,
     val mesh: Mesh, val transform: Transform = Transform(),
-    val visible: Boolean = true, val locked: Boolean = false, val opacity: Float = 1f
+    val visible: Boolean = true, val locked: Boolean = false, val opacity: Float = 1f,
+    val parentId: String? = null
 )
 @Serializable data class Keyform(val value: Float, val vertices: List<Vec2>)
 @Serializable data class Binding(val partId: String, val keys: List<Keyform>)
 @Serializable data class Parameter(
     val id: String = newId(), val name: String, val min: Float = 0f,
     val default: Float = 1f, val max: Float = 1f, val value: Float = default,
-    val bindings: List<Binding> = emptyList()
+    val bindings: List<Binding> = emptyList(),
+    val deformerBindings: List<DeformerBinding> = emptyList()
 )
 @Serializable data class Project(
-    val format: String = "MyLive2D", val version: Int = 1, val id: String = newId(),
+    val format: String = "MyLive2D", val version: Int = 2, val id: String = newId(),
     val name: String = "새 프로젝트", val assets: List<Asset> = emptyList(),
     // First part is backmost. Order is identical in archives, evaluation and rendering.
-    val parts: List<Part> = emptyList(), val parameters: List<Parameter> = emptyList()
+    val parts: List<Part> = emptyList(), val parameters: List<Parameter> = emptyList(),
+    val deformers: List<Deformer> = emptyList()
 )
 
 object ParameterEngine {
@@ -73,6 +76,11 @@ object ParameterEngine {
             }
         }
         return result
+    }
+    fun isolatedVertices(project: Project, part: Part, parameterId: String): List<Vec2> {
+        val parameter = project.parameters.first { it.id == parameterId }
+        val binding = parameter.bindings.firstOrNull { it.partId == part.id }
+        return binding?.let { interpolate(it.keys, parameter.value) } ?: part.mesh.vertices
     }
     fun record(project: Project, parameterId: String, partId: String, vertices: List<Vec2>): Project {
         val part = project.parts.first { it.id == partId }
@@ -124,7 +132,7 @@ class History(initial: Project, private val limit: Int = 40) {
 
 object Validation {
     fun check(p: Project) {
-        require(p.format == "MyLive2D" && p.version == 1) { "Unsupported project format/version" }
+        require(p.format == "MyLive2D" && p.version == 2) { "Unsupported project format/version" }
         fun id(s: String) = s.matches(Regex("[A-Za-z0-9-]{1,80}"))
         require(id(p.id) && p.name.isNotBlank() && p.name.length <= 120)
         require(p.assets.size <= 32 && p.parts.size <= 64 && p.parameters.size <= 32)
@@ -136,14 +144,15 @@ object Validation {
         p.parts.forEach { part ->
             require(id(part.id) && part.name.length in 1..120 && p.assets.any { it.id == part.assetId })
             val m = part.mesh
-            require(m.vertices.size in 3..625 && m.uv.size == m.vertices.size)
-            require(m.triangles.isNotEmpty() && m.triangles.size <= 3456 && m.triangles.size%3 == 0)
+            require(m.vertices.size in 3..1024 && m.uv.size == m.vertices.size)
+            require(m.triangles.isNotEmpty() && m.triangles.size <= 6144 && m.triangles.size%3 == 0)
             require(m.vertices.all { it.finite() } && m.uv.all { it.finite() && it.x in 0f..1f && it.y in 0f..1f })
             require(m.triangles.all { it in m.vertices.indices })
             require(part.transform.position.finite() && part.transform.rotation.isFinite())
             require(part.transform.scale.isFinite() && part.transform.scale in .01f..100f)
             require(part.opacity.isFinite() && part.opacity in 0f..1f)
         }
+        RigValidation.check(p)
         p.parameters.forEach { param ->
             require(id(param.id) && param.name.length in 1..120)
             require(listOf(param.min,param.max,param.default,param.value).all { it.isFinite() && abs(it)<=1_000_000 })

@@ -1,5 +1,7 @@
 # My Live 2D
 
+> 이 브랜치는 Phase 2 / v0.2.0 개발 소스입니다. 아래 Phase 1 기록과 별도로 [리깅 설계·사용 원칙](docs/RIGGING.md), [Phase 2 검증 상태](docs/PHASE2_VALIDATION.md)를 확인하세요. Phase 2 APK와 최신 사용법은 검증 완료 후 갱신합니다.
+
 Android 스마트폰·태블릿용 독립적인 2D 캐릭터 모델 편집기. **Phase 1 / 0.1.0** 소스입니다. Kotlin + Jetpack Compose + OpenGL ES 2.0을 사용합니다.
 
 Cubism SDK나 독점 파일 포맷을 사용하지 않습니다. `.mylive2d`는 자체 ZIP + JSON + PNG 포맷입니다. 핵심 편집에 네트워크·회원가입이 필요하지 않으며 앱은 인터넷 권한을 요청하지 않습니다.

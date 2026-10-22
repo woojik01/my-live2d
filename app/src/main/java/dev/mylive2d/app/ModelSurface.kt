@@ -18,9 +18,10 @@ class ModelSurface(context: Context, private val vm: EditorViewModel): GLSurface
     private val painter=MeshRenderer(vm)
     private var last=Vec2(); private var lastSpan=0f; private var pointers=0
     private var vertex=-1; private var movingPart=false
+    private var control=-1; private var rotating=false; private var topologyTap=false
     init { setEGLContextClientVersion(2); setRenderer(painter); renderMode=RENDERMODE_WHEN_DIRTY; preserveEGLContextOnPause=true }
     fun update() {
-        painter.scene=Scene(vm.project,vm.camera,vm.selectedId,vm.meshMode,vm.grid,vm.background,if(vm.keyEditing) vm.draft else null)
+        painter.scene=Scene(vm.renderProject,vm.camera,vm.selectedId,vm.meshMode,vm.grid,vm.background,null,vm.selectedDeformerId,vm.selectedVertex)
         requestRender()
     }
     private fun center(e: MotionEvent): Vec2 = if(e.pointerCount>=2) Vec2((e.getX(0)+e.getX(1))/2,(e.getY(0)+e.getY(1))/2) else Vec2(e.x,e.y)
@@ -28,52 +29,63 @@ class ModelSurface(context: Context, private val vm: EditorViewModel): GLSurface
     override fun onTouchEvent(e: MotionEvent): Boolean {
         if(vm.busy) return true
         val w=width.toFloat(); val h=height.toFloat(); val c=center(e)
+        fun nearest(points: List<Vec2>, radius: Float=28f): Int {
+            val i=points.indices.minByOrNull { n -> val s=vm.camera.screen(points[n],w,h); hypot(s.x-c.x,s.y-c.y) } ?: return -1
+            val screen=vm.camera.screen(points[i],w,h)
+            return if(hypot(screen.x-c.x,screen.y-c.y)<=radius*resources.displayMetrics.density) i else -1
+        }
         when(e.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
-                parent?.requestDisallowInterceptTouchEvent(true); last=c; pointers=1; vertex=-1; movingPart=false
-                val world=vm.camera.world(c,w,h); val selected=vm.selected
-                if(vm.meshMode && selected != null && selected.visible && !selected.locked) {
-                    val points=vm.draft ?: ParameterEngine.vertices(vm.project,selected)
-                    vertex=points.indices.minByOrNull { i -> val s=vm.camera.screen(selected.transform.apply(points[i]),w,h); hypot(s.x-c.x,s.y-c.y) } ?: -1
-                    if(vertex>=0) { val s=vm.camera.screen(selected.transform.apply(points[vertex]),w,h); if(hypot(s.x-c.x,s.y-c.y)>28*resources.displayMetrics.density) vertex=-1 }
-                } else {
-                    val hit=vm.project.parts.asReversed().firstOrNull { part -> part.visible && hitPart(part,world) }
-                    if(hit!=null) { if(hit.id!=vm.selectedId) vm.select(hit.id); movingPart=!hit.locked }
+                parent?.requestDisallowInterceptTouchEvent(true); last=c; pointers=1
+                vertex=-1; movingPart=false; control=-1; rotating=false; topologyTap=false
+                val world=vm.camera.world(c,w,h); val eval=RigEvaluator(vm.renderProject)
+                val selected=vm.selected; val node=vm.selectedDeformer
+                if(node!=null && eval.visible(node) && !eval.locked(node)) {
+                    if(node.kind==DeformerKind.WARP && vm.meshMode) control=nearest(eval.controlWorld(node))
+                    if(control<0) rotating=nearest(listOf(eval.axisWorld(node)))==0
+                    if(control<0 && !rotating) movingPart=nearest(listOf(eval.pivotWorld(node)),36f)==0
+                } else if(vm.meshMode && selected!=null && eval.visible(selected) && !eval.locked(selected)) {
+                    val points=eval.partWorld(selected)
+                    vertex=nearest(points); vm.selectedVertex=vertex
+                    if(vm.meshTool==1 && !vm.keyEditing) { vm.addMeshVertex(world); topologyTap=true; vertex=-1 }
+                    if(vm.meshTool==2 && !vm.keyEditing) { if(vertex>=0) vm.removeMeshVertex(vertex); topologyTap=true; vertex=-1 }
+                } else if(!vm.keyEditing) {
+                    val hit=vm.project.parts.asReversed().firstOrNull { part -> eval.visible(part) && MeshTopology.hit(part.mesh,eval.partWorld(part),world)!=null }
+                    if(hit!=null) { if(hit.id!=vm.selectedId) vm.select(hit.id); movingPart=!eval.locked(hit) }
                 }
                 vm.beginGesture()
             }
-            MotionEvent.ACTION_POINTER_DOWN, MotionEvent.ACTION_POINTER_UP -> { vm.endGesture(); vertex=-1; movingPart=false; pointers=0; last=c; lastSpan=span(e) }
+            MotionEvent.ACTION_POINTER_DOWN, MotionEvent.ACTION_POINTER_UP -> {
+                vm.endGesture(); vertex=-1; movingPart=false; control=-1; rotating=false; topologyTap=false
+                pointers=0; last=c; lastSpan=span(e)
+            }
             MotionEvent.ACTION_MOVE -> {
                 if(e.pointerCount>=2) {
                     val currentSpan=span(e)
                     if(pointers>=2 && lastSpan>0) vm.camera=vm.camera.gesture(last,c-last,currentSpan/lastSpan,w,h)
                     lastSpan=currentSpan
-                } else if(pointers==1) {
-                    val d=(c-last)*(1/vm.camera.zoom)
-                    if(vertex>=0) {
-                        val transform=vm.selected?.transform ?: Transform()
-                        vm.moveVertex(vertex,transform.inverse(transform.position+d)-transform.inverse(transform.position))
-                    } else if(movingPart) vm.movePart(d)
-                    else vm.camera=vm.camera.copy(center=vm.camera.center-d)
+                } else if(pointers==1 && !topologyTap) {
+                    val delta=(c-last)*(1/vm.camera.zoom)
+                    when {
+                        control>=0 -> vm.moveWarpControl(control,delta)
+                        rotating -> vm.rotateDeformer(vm.camera.world(last,w,h),vm.camera.world(c,w,h))
+                        vertex>=0 -> vm.moveVertexWorld(vertex,delta)
+                        movingPart -> vm.moveElementWorld(delta)
+                        else -> vm.camera=vm.camera.copy(center=vm.camera.center-delta)
+                    }
                 }
                 pointers=e.pointerCount; last=c; update()
             }
-            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> { vm.endGesture(); vertex=-1; movingPart=false; pointers=0; performClick() }
+            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                vm.endGesture(); vertex=-1; control=-1; rotating=false; movingPart=false; topologyTap=false; pointers=0; performClick()
+            }
         }
         update(); return true
     }
     override fun performClick(): Boolean { super.performClick(); return true }
-    private fun hitPart(part: Part, world: Vec2): Boolean {
-        val local=part.transform.inverse(world); val v=ParameterEngine.vertices(vm.project,part)
-        return part.mesh.triangles.chunked(3).any { t ->
-            val a=v[t[0]]; val b=v[t[1]]; val c=v[t[2]]
-            fun cross(p: Vec2,q: Vec2,r: Vec2)=(p.x-r.x)*(q.y-r.y)-(q.x-r.x)*(p.y-r.y)
-            val d1=cross(local,a,b); val d2=cross(local,b,c); val d3=cross(local,c,a)
-            !((d1<0 || d2<0 || d3<0) && (d1>0 || d2>0 || d3>0)) && abs(cross(a,b,c))>.0001f
-        }
-    }
 }
-private data class Scene(val project: Project, val camera: Camera, val selected: String?, val mesh: Boolean, val grid: Boolean, val background: Int, val draft: List<Vec2>?)
+
+private data class Scene(val project: Project, val camera: Camera, val selected: String?, val mesh: Boolean, val grid: Boolean, val background: Int, val draft: List<Vec2>?, val deformer: String?=null, val vertex: Int=-1)
 private class MeshRenderer(private val vm: EditorViewModel): GLSurfaceView.Renderer {
     @Volatile var scene=Scene(Project(),Camera(),null,false,true,0,null)
     private var width=1; private var height=1; private var program=0; private var backdrop=0
@@ -83,7 +95,7 @@ private class MeshRenderer(private val vm: EditorViewModel): GLSurfaceView.Rende
         program=program("""attribute vec2 position; attribute vec2 uv; varying vec2 tex;
             void main(){ gl_Position=vec4(position,0.,1.); tex=uv; gl_PointSize=12.; }""",
             """precision mediump float; uniform sampler2D image; uniform float opacity; uniform int mode; varying vec2 tex;
-            void main(){ if(mode==1) gl_FragColor=vec4(.5,.7,1.,1.); else gl_FragColor=texture2D(image,tex)*opacity; }""")
+            void main(){ if(mode==1) gl_FragColor=vec4(.5,.7,1.,1.); else if(mode==2) gl_FragColor=vec4(1.,.65,.2,1.); else gl_FragColor=texture2D(image,tex)*opacity; }""")
         backdrop=program("attribute vec2 position; void main(){gl_Position=vec4(position,0.,1.);}",
             """precision mediump float; uniform int background; uniform int grid; uniform vec2 viewport; uniform vec2 camera; uniform float zoom;
             void main(){
@@ -100,7 +112,7 @@ private class MeshRenderer(private val vm: EditorViewModel): GLSurfaceView.Rende
     }
     override fun onSurfaceChanged(gl: GL10?,w: Int,h: Int) { width=w.coerceAtLeast(1); height=h.coerceAtLeast(1); glViewport(0,0,width,height) }
     override fun onDrawFrame(gl: GL10?) {
-        val s=scene
+        val s=scene; val eval=RigEvaluator(s.project)
         val used=s.project.assets.map { it.id }.toSet()
         textures.keys.filter { it !in used }.toList().forEach { textures.remove(it)?.let { id -> glDeleteTextures(1,intArrayOf(id),0) } }
         glClearColor(.1f,.1f,.15f,1f); glClear(GL_COLOR_BUFFER_BIT)
@@ -116,10 +128,10 @@ private class MeshRenderer(private val vm: EditorViewModel): GLSurfaceView.Rende
         glUseProgram(program)
         val position=glGetAttribLocation(program,"position"); val uv=glGetAttribLocation(program,"uv")
         glEnableVertexAttribArray(position); glEnableVertexAttribArray(uv)
-        s.project.parts.filter { it.visible }.forEach { part ->
+        s.project.parts.filter { eval.visible(it) }.forEach { part ->
             val texture=texture(part.assetId) ?: return@forEach
             val points=if(part.id==s.selected && s.draft!=null) s.draft else ParameterEngine.vertices(s.project,part)
-            val clip=points.flatMap { p -> val screen=s.camera.screen(part.transform.apply(p),width.toFloat(),height.toFloat()); listOf(screen.x/width*2-1,1-screen.y/height*2) }
+            val clip=eval.partWorld(part,points).flatMap { p -> val screen=s.camera.screen(p,width.toFloat(),height.toFloat()); listOf(screen.x/width*2-1,1-screen.y/height*2) }
             glVertexAttribPointer(position,2,GL_FLOAT,false,0,floats(clip))
             glVertexAttribPointer(uv,2,GL_FLOAT,false,0,floats(part.mesh.uv.flatMap { listOf(it.x,it.y) }))
             glActiveTexture(GL_TEXTURE0); glBindTexture(GL_TEXTURE_2D,texture)
@@ -129,17 +141,35 @@ private class MeshRenderer(private val vm: EditorViewModel): GLSurfaceView.Rende
             val t=part.mesh.triangles; glDrawElements(GL_TRIANGLES,t.size,GL_UNSIGNED_SHORT,shorts(t))
             if(part.id==s.selected) {
                 glUniform1i(glGetUniformLocation(program,"mode"),1)
-                val lines=if(s.mesh) t.chunked(3).flatMap { listOf(it[0],it[1],it[1],it[2],it[2],it[0]) } else {
-                    // Outline texture boundary even after deformation; grid meshes are consistently ordered by UV.
-                    val edge=part.mesh.uv.indices.filter { val u=part.mesh.uv[it]; u.x==0f || u.x==1f || u.y==0f || u.y==1f }
-                        .sortedBy { val u=part.mesh.uv[it]; when { u.y==0f -> u.x; u.x==1f -> 1+u.y; u.y==1f -> 3-u.x; else -> 4-u.y } }
-                    edge.indices.flatMap { listOf(edge[it],edge[(it+1)%edge.size]) }
-                }
+                val lines=if(s.mesh) t.chunked(3).flatMap { listOf(it[0],it[1],it[1],it[2],it[2],it[0]) } else MeshTopology.boundaryEdges(part.mesh)
                 glDrawElements(GL_LINES,lines.size,GL_UNSIGNED_SHORT,shorts(lines))
-                if(s.mesh) glDrawArrays(GL_POINTS,0,points.size)
+                if(s.mesh) {
+                    glDrawArrays(GL_POINTS,0,points.size)
+                    if(s.vertex in points.indices) { glUniform1i(glGetUniformLocation(program,"mode"),2); glDrawElements(GL_POINTS,1,GL_UNSIGNED_SHORT,shorts(listOf(s.vertex))) }
+                }
             }
         }
-        glDisableVertexAttribArray(position); glDisableVertexAttribArray(uv)
+        glDisableVertexAttribArray(uv); glVertexAttrib2f(uv,0f,0f)
+        s.deformer?.let { id -> s.project.deformers.firstOrNull { it.id==id && eval.visible(it) }?.let { node ->
+            fun positions(points: List<Vec2>)=floats(points.flatMap { p -> val screen=s.camera.screen(p,width.toFloat(),height.toFloat()); listOf(screen.x/width*2-1,1-screen.y/height*2) })
+            glUniform1i(glGetUniformLocation(program,"mode"),2)
+            if(node.kind==DeformerKind.WARP) {
+                val controls=eval.controlWorld(node)
+                glVertexAttribPointer(position,2,GL_FLOAT,false,0,positions(controls))
+                val lines=mutableListOf<Int>()
+                for(y in 0..node.rows) for(x in 0..node.columns) {
+                    val i=y*(node.columns+1)+x
+                    if(x<node.columns) lines.addAll(listOf(i,i+1))
+                    if(y<node.rows) lines.addAll(listOf(i,i+node.columns+1))
+                }
+                glDrawElements(GL_LINES,lines.size,GL_UNSIGNED_SHORT,shorts(lines))
+                if(s.mesh) glDrawArrays(GL_POINTS,0,controls.size)
+            }
+            val pivot=eval.pivotWorld(node); val axis=eval.axisWorld(node)
+            glVertexAttribPointer(position,2,GL_FLOAT,false,0,positions(listOf(pivot,axis)))
+            glDrawArrays(GL_LINES,0,2); glDrawArrays(GL_POINTS,0,2)
+        } }
+        glDisableVertexAttribArray(position)
     }
     private fun texture(id: String): Int? {
         textures[id]?.let { return it }; if(id in failed) return null

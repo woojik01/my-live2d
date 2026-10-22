@@ -99,7 +99,7 @@ class MainActivity: ComponentActivity() {
                 TextButton(onClick={ left=!left; if(left && !wideScreen) right=false }) { Text(vm.tr("파츠","Parts")) }
                 TextButton(onClick={ right=!right; if(right && !wideScreen) left=false }) { Text(vm.tr("속성","Properties")) }
                 TextButton(onClick={ png.launch(arrayOf("image/png")) },enabled=!vm.busy) { Text("+ PNG") }
-                FilterChip(selected=vm.meshMode,onClick={ vm.meshMode=!vm.meshMode },label={ Text(vm.tr("메쉬","Mesh")) })
+                FilterChip(selected=vm.meshMode,onClick={ vm.meshMode=!vm.meshMode },label={ Text(if(vm.selectedDeformer?.kind==DeformerKind.WARP) vm.tr("격자","Grid edit") else vm.tr("메쉬","Mesh")) })
                 Spacer(Modifier.width(8.dp))
                 TextButton(onClick={ fit(vm,surface.width.toFloat(),surface.height.toFloat()) }) { Text(vm.tr("전체 보기","Fit")) }
                 TextButton(onClick={ vm.grid=!vm.grid }) { Text(vm.tr("그리드","Grid")+if(vm.grid) " ✓" else "") }
@@ -138,48 +138,41 @@ class MainActivity: ComponentActivity() {
 }
 
 private fun fit(vm: EditorViewModel,width: Float,height: Float) {
-    val points=vm.project.parts.filter { it.visible }.flatMap { p -> ParameterEngine.vertices(vm.project,p).map(p.transform::apply) }
+    val eval=RigEvaluator(vm.renderProject)
+    val points=vm.renderProject.parts.filter { eval.visible(it) }.flatMap { eval.partWorld(it) }
     if(points.isEmpty() || width<=0 || height<=0) { vm.camera=Camera(); return }
     val minX=points.minOf { it.x }; val maxX=points.maxOf { it.x }; val minY=points.minOf { it.y }; val maxY=points.maxOf { it.y }
     vm.camera=Camera(Vec2((minX+maxX)/2,(minY+maxY)/2),min(width/(maxX-minX+100),height/(maxY-minY+100)).coerceIn(.03f,20f))
 }
 
-@Composable private fun Layers(vm: EditorViewModel) {
-    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(10.dp)) {
-        Text(vm.tr("파츠 · 앞 → 뒤","Parts · front → back"),style=MaterialTheme.typography.titleSmall)
-        vm.project.parts.asReversed().forEach { p ->
-            Surface(color=if(p.id==vm.selectedId) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface,modifier=Modifier.fillMaxWidth().padding(vertical=3.dp).clickable(enabled=!vm.busy) { vm.select(p.id) }) {
-                Column(Modifier.padding(8.dp)) {
-                    Text(p.name,maxLines=2)
-                    Row {
-                        TextButton(onClick={ vm.select(p.id); vm.updatePart { it.copy(visible=!it.visible) } },enabled=!vm.busy) { Text(if(p.visible) vm.tr("표시","Shown") else vm.tr("숨김","Hidden")) }
-                        TextButton(onClick={ vm.select(p.id); vm.updatePart { it.copy(locked=!it.locked) } },enabled=!vm.busy) { Text(if(p.locked) vm.tr("잠금","Locked") else vm.tr("편집","Edit")) }
-                    }
-                }
-            }
-        }
-        TextButton(onClick={ vm.reorder(1) },enabled=vm.selected!=null && !vm.busy) { Text(vm.tr("앞으로","Bring forward")) }
-        TextButton(onClick={ vm.reorder(-1) },enabled=vm.selected!=null && !vm.busy) { Text(vm.tr("뒤로","Send backward")) }
-    }
-}
+@Composable private fun Layers(vm: EditorViewModel) { HierarchyPanel(vm) }
 
 @Composable private fun Properties(vm: EditorViewModel) {
     var name by remember { mutableStateOf(false) }; var parameter by remember { mutableStateOf(false) }; var mesh by remember { mutableStateOf(false) }
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(10.dp),verticalArrangement=Arrangement.spacedBy(4.dp)) {
         val p=vm.selected
+        if(vm.selectedDeformer!=null) DeformerProperties(vm)
         if(p!=null) {
             Text(p.name,style=MaterialTheme.typography.titleMedium)
-            Row { TextButton(onClick={ name=true },enabled=!p.locked) { Text(vm.tr("이름","Rename")) }; TextButton(onClick=vm::duplicate) { Text(vm.tr("복제","Copy")) } }
-            FloatEditor(vm.tr("X 위치","X"),p.transform.position.x,enabled=!p.locked) { v -> vm.updatePart { it.copy(transform=it.transform.copy(position=it.transform.position.copy(x=v))) } }
-            FloatEditor(vm.tr("Y 위치","Y"),p.transform.position.y,enabled=!p.locked) { v -> vm.updatePart { it.copy(transform=it.transform.copy(position=it.transform.position.copy(y=v))) } }
-            FloatEditor(vm.tr("회전 (도)","Rotation (°)"),p.transform.rotation,enabled=!p.locked) { v -> vm.updatePart { it.copy(transform=it.transform.copy(rotation=v.coerceIn(-3600f,3600f))) } }
-            FloatEditor(vm.tr("배율","Scale"),p.transform.scale,enabled=!p.locked) { v -> if(v in .01f..100f) vm.updatePart { it.copy(transform=it.transform.copy(scale=v)) } }
+            ParentPicker(vm)
+            Row { TextButton(onClick={ name=true },enabled=!vm.selectedLocked) { Text(vm.tr("이름","Rename")) }; TextButton(onClick=vm::duplicate) { Text(vm.tr("복제","Copy")) } }
+            FloatEditor(vm.tr("X 위치","X"),p.transform.position.x,enabled=!vm.selectedLocked) { v -> vm.updatePart { it.copy(transform=it.transform.copy(position=it.transform.position.copy(x=v))) } }
+            FloatEditor(vm.tr("Y 위치","Y"),p.transform.position.y,enabled=!vm.selectedLocked) { v -> vm.updatePart { it.copy(transform=it.transform.copy(position=it.transform.position.copy(y=v))) } }
+            FloatEditor(vm.tr("회전 (도)","Rotation (°)"),p.transform.rotation,enabled=!vm.selectedLocked) { v -> vm.updatePart { it.copy(transform=it.transform.copy(rotation=v.coerceIn(-3600f,3600f))) } }
+            FloatEditor(vm.tr("배율","Scale"),p.transform.scale,enabled=!vm.selectedLocked) { v -> if(v in .01f..100f) vm.updatePart { it.copy(transform=it.transform.copy(scale=v)) } }
             Text(vm.tr("투명도","Opacity")+" ${(p.opacity*100).roundToInt()}%",style=MaterialTheme.typography.labelMedium)
-            Slider(value=p.opacity,onValueChange=vm::previewOpacity,onValueChangeFinished=vm::endGesture,enabled=!p.locked)
-            OutlinedButton(onClick={ mesh=true },enabled=!p.locked) { Text(vm.tr("메쉬 생성 / 재생성","Build / rebuild mesh")) }
+            Slider(value=p.opacity,onValueChange=vm::previewOpacity,onValueChangeFinished=vm::endGesture,enabled=!vm.selectedLocked)
+            OutlinedButton(onClick={ mesh=true },enabled=!vm.selectedLocked) { Text(vm.tr("메쉬 생성 / 재생성","Build / rebuild mesh")) }
             Text("${p.mesh.vertices.size} "+vm.tr("정점","vertices"),style=MaterialTheme.typography.labelSmall)
-            TextButton(onClick=vm::deletePart,enabled=!p.locked) { Text(vm.tr("파츠 삭제","Delete part"),color=MaterialTheme.colorScheme.error) }
-        } else Text(vm.tr("파츠를 선택하세요","Select a part"))
+            Row(Modifier.horizontalScroll(rememberScrollState())) {
+                listOf(vm.tr("이동","Move"),vm.tr("정점 +","Vertex +"),vm.tr("정점 −","Vertex −")).forEachIndexed { i,label ->
+                    TextButton(onClick={ vm.meshMode=true; vm.meshTool=i },enabled=!vm.selectedLocked && (i==0 || !vm.keyEditing),modifier=Modifier.testTag("meshTool-$i")) { Text((if(vm.meshMode && vm.meshTool==i) "✓ " else "")+label) }
+                }
+            }
+            if(vm.meshMode) Text(vm.tr("+는 삼각형 안쪽 탭 · −는 내부 정점 탭 (외곽 보호)","+ tap inside a triangle · − tap an interior vertex (boundary protected)"),style=MaterialTheme.typography.labelSmall)
+            if(vm.selectedVertex>=0) Text(vm.tr("선택 정점: ","Selected vertex: ")+vm.selectedVertex,style=MaterialTheme.typography.labelSmall)
+            TextButton(onClick=vm::deletePart,enabled=!vm.selectedLocked) { Text(vm.tr("파츠 삭제","Delete part"),color=MaterialTheme.colorScheme.error) }
+        } else if(vm.selectedDeformer==null) Text(vm.tr("파츠 또는 디포머를 선택하세요","Select a part or deformer"))
         HorizontalDivider(Modifier.padding(vertical=8.dp))
         Text(vm.tr("파라미터","Parameters"),style=MaterialTheme.typography.titleMedium)
         TextButton(onClick={ parameter=true },enabled=vm.project.parameters.size<32) { Text(vm.tr("+ 파라미터 추가","+ Add parameter")) }
@@ -194,19 +187,18 @@ private fun fit(vm: EditorViewModel,width: Float,height: Float) {
                         TextButton(onClick={ vm.parameterValue(param.id,param.default) },enabled=!vm.keyEditing) { Text(vm.tr("기본","Default")) }
                         TextButton(onClick={ vm.parameterValue(param.id,param.max) },enabled=!vm.keyEditing) { Text(vm.tr("최대","Max")) }
                     }
-                    if(p!=null) {
-                        val keys=param.bindings.firstOrNull { it.partId==p.id }?.keys.orEmpty().sortedBy { it.value }
-                        if(keys.isNotEmpty()) Text(vm.tr("키폼: ","Keyforms: ")+keys.joinToString { format(it.value) },style=MaterialTheme.typography.labelSmall)
-                        keys.forEach { key -> TextButton(onClick={ vm.parameterValue(param.id,key.value) },enabled=!vm.keyEditing) { Text("◆ ${format(key.value)}") } }
-                    }
+                    val values=vm.keyValues(param).sorted()
+                    if(values.isNotEmpty()) Text(vm.tr("키폼: ","Keyforms: ")+values.joinToString { format(it) },style=MaterialTheme.typography.labelSmall)
+                    values.forEach { value -> TextButton(onClick={ vm.parameterValue(param.id,value) },enabled=!vm.keyEditing) { Text("◆ ${format(value)}") } }
+
                 }
             }
         }
-        if(vm.parameter!=null && p!=null) {
-            Button(onClick=vm::blink,enabled=!p.locked && !vm.keyEditing) { Text(vm.tr("눈 개폐 키폼","Eye blink keyforms")) }
-            Text(vm.tr("선택한 파츠에 적용","Applies to selected part"),style=MaterialTheme.typography.labelSmall)
-            OutlinedButton(onClick=vm::startKey,enabled=!p.locked && !vm.keyEditing) { Text(vm.tr("현재 값 키폼 편집","Edit keyform at value")) }
-            TextButton(onClick=vm::deleteKey,enabled=!p.locked && !vm.keyEditing) { Text(vm.tr("현재 값 키폼 삭제","Delete keyform at value")) }
+        if(vm.parameter!=null && (p!=null || vm.selectedDeformer!=null)) {
+            if(p!=null) Button(onClick=vm::blink,enabled=!vm.selectedLocked && !vm.keyEditing) { Text(vm.tr("눈 개폐 키폼","Eye blink keyforms")) }
+            Text(vm.tr("선택 항목에 적용 · 다른 파라미터 변형은 유지","Applies to selection · other parameters stay live"),style=MaterialTheme.typography.labelSmall)
+            OutlinedButton(onClick=vm::startKey,enabled=!vm.selectedLocked && !vm.keyEditing,modifier=Modifier.testTag("editKeyform")) { Text(vm.tr("현재 값 키폼 편집","Edit keyform at value")) }
+            TextButton(onClick=vm::deleteKey,enabled=!vm.selectedLocked && !vm.keyEditing) { Text(vm.tr("현재 값 키폼 삭제","Delete keyform at value")) }
         }
         if(vm.parameter!=null) TextButton(onClick=vm::deleteParameter,enabled=!vm.keyEditing) { Text(vm.tr("파라미터 삭제","Delete parameter")) }
     }
@@ -216,14 +208,14 @@ private fun fit(vm: EditorViewModel,width: Float,height: Float) {
 }
 private fun format(v: Float)=String.format(java.util.Locale.ROOT,"%.2f",v)
 
-@Composable private fun FloatEditor(label: String,value: Float,enabled: Boolean=true,onApply: (Float)->Unit) {
+@Composable internal fun FloatEditor(label: String,value: Float,enabled: Boolean=true,onApply: (Float)->Unit) {
     var text by remember(value) { mutableStateOf(format(value)) }
     Row(verticalAlignment=Alignment.CenterVertically) {
-        OutlinedTextField(value=text,onValueChange={ text=it },label={ Text(label) },singleLine=true,enabled=enabled,keyboardOptions=KeyboardOptions(keyboardType=KeyboardType.Decimal),modifier=Modifier.weight(1f))
+        OutlinedTextField(value=text,onValueChange={ text=it },label={ Text(label) },singleLine=true,enabled=enabled,keyboardOptions=KeyboardOptions(keyboardType=KeyboardType.Ascii),modifier=Modifier.weight(1f))
         TextButton(onClick={ text.toFloatOrNull()?.takeIf { it.isFinite() && abs(it)<=1_000_000 }?.let(onApply) },enabled=enabled && text.toFloatOrNull()?.isFinite()==true) { Text("✓") }
     }
 }
-@Composable private fun NameDialog(vm: EditorViewModel,title: String,initial: String,onDismiss: ()->Unit,onConfirm: (String)->Unit) {
+@Composable internal fun NameDialog(vm: EditorViewModel,title: String,initial: String,onDismiss: ()->Unit,onConfirm: (String)->Unit) {
     var text by remember { mutableStateOf(initial) }
     AlertDialog(onDismissRequest=onDismiss,title={ Text(title) },text={ OutlinedTextField(value=text,onValueChange={ text=it.take(120) },singleLine=true,label={ Text(vm.tr("이름","Name")) }) },confirmButton={ TextButton(onClick={ onConfirm(text.trim()) },enabled=text.isNotBlank()) { Text(vm.tr("확인","OK")) } },dismissButton={ TextButton(onClick=onDismiss) { Text(vm.tr("취소","Cancel")) } })
 }
@@ -233,9 +225,9 @@ private fun format(v: Float)=String.format(java.util.Locale.ROOT,"%.2f",v)
     val valid=name.isNotBlank() && a!=null && b!=null && c!=null && a.isFinite() && b.isFinite() && c.isFinite() && a<c && b in a..c && listOf(a,b,c).all { abs(it)<=1_000_000 }
     AlertDialog(onDismissRequest=onDismiss,title={ Text(vm.tr("파라미터 추가","Add parameter")) },text={ Column(Modifier.verticalScroll(rememberScrollState())) {
         OutlinedTextField(value=name,onValueChange={ name=it.take(120) },label={ Text(vm.tr("이름","Name")) })
-        OutlinedTextField(value=min,onValueChange={ min=it },label={ Text(vm.tr("최솟값","Minimum")) },keyboardOptions=KeyboardOptions(keyboardType=KeyboardType.Decimal))
-        OutlinedTextField(value=def,onValueChange={ def=it },label={ Text(vm.tr("기본값","Default")) },keyboardOptions=KeyboardOptions(keyboardType=KeyboardType.Decimal))
-        OutlinedTextField(value=max,onValueChange={ max=it },label={ Text(vm.tr("최댓값","Maximum")) },keyboardOptions=KeyboardOptions(keyboardType=KeyboardType.Decimal))
+        OutlinedTextField(value=min,onValueChange={ min=it },label={ Text(vm.tr("최솟값","Minimum")) },keyboardOptions=KeyboardOptions(keyboardType=KeyboardType.Ascii))
+        OutlinedTextField(value=def,onValueChange={ def=it },label={ Text(vm.tr("기본값","Default")) },keyboardOptions=KeyboardOptions(keyboardType=KeyboardType.Ascii))
+        OutlinedTextField(value=max,onValueChange={ max=it },label={ Text(vm.tr("최댓값","Maximum")) },keyboardOptions=KeyboardOptions(keyboardType=KeyboardType.Ascii))
         if(!valid) Text(vm.tr("최소 < 최대, 기본값은 범위 안에 입력하세요","Min < max; default must be within range"),color=MaterialTheme.colorScheme.error)
     } },confirmButton={ TextButton(onClick={ onConfirm(name,a!!,b!!,c!!) },enabled=valid) { Text(vm.tr("추가","Add")) } },dismissButton={ TextButton(onClick=onDismiss) { Text(vm.tr("취소","Cancel")) } })
 }
