@@ -14,13 +14,15 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
@@ -42,12 +44,17 @@ class MainActivity: ComponentActivity() {
     }
 }
 
+private enum class CompactEditorPanel { LAYERS, PROPERTIES }
+
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable private fun EditorScreen(vm: EditorViewModel) {
     val snack=remember { SnackbarHostState() }
     val screenDp=LocalConfiguration.current.screenWidthDp
-    val wideScreen=screenDp>=850
-    val density=LocalDensity.current.density
-    var left by remember { mutableStateOf(false) }; var right by remember { mutableStateOf(true) }
+    val dualPaneScreen=screenDp>=1100
+    val sidePropertiesScreen=screenDp>=700
+    var left by remember { mutableStateOf(true) }; var right by remember { mutableStateOf(true) }
+    var compactPanel by remember { mutableStateOf<CompactEditorPanel?>(null) }
+    var toolsExpanded by remember { mutableStateOf(false) }
     var projects by remember { mutableStateOf(false) }; var help by remember { mutableStateOf(false) }
     var animationExportDialog by remember { mutableStateOf(false) }
     var animationExportSize by remember { mutableIntStateOf(512) }
@@ -61,6 +68,7 @@ class MainActivity: ComponentActivity() {
     val export=rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/zip")) { it?.let(vm::export) }
     val sequenceExport=rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/zip")) { it?.let { uri -> vm.exportAnimationSequence(uri,animationExportSize) } }
     LaunchedEffect(vm) { vm.messages.collect { snack.showSnackbar(it) } }
+    LaunchedEffect(sidePropertiesScreen) { if(sidePropertiesScreen) compactPanel=null }
     DisposableEffect(lifecycle,surface) {
         val observer=LifecycleEventObserver { _,event -> when(event) {
             Lifecycle.Event.ON_RESUME -> { surface.onResume(); surface.update() }
@@ -83,29 +91,24 @@ class MainActivity: ComponentActivity() {
             }
         },modifier=Modifier.safeDrawingPadding()) { padding ->
         Column(Modifier.fillMaxSize().padding(padding)) {
-            Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal=8.dp),verticalAlignment=Alignment.CenterVertically) {
-                TextButton(onClick={ projects=true },enabled=!vm.busy,modifier=Modifier.testTag("projectMenu")) { Text("☰") }
-                Text(vm.project.name+if(vm.dirty) " *" else "",modifier=Modifier.widthIn(max=200.dp).clickable { rename=true }.testTag("projectName"),maxLines=1,overflow=TextOverflow.Ellipsis)
-                TextButton(onClick=vm::save,enabled=!vm.busy,modifier=Modifier.testTag("save")) { Text(vm.tr("저장","Save")) }
-                TextButton(onClick=vm::undo,enabled=vm.canUndo && !vm.busy) { Text(vm.tr("실행 취소","Undo")) }
-                TextButton(onClick=vm::redo,enabled=vm.canRedo && !vm.busy) { Text(vm.tr("다시 실행","Redo")) }
-                vm.selectedAnimation?.let { Text("${vm.animationFrame}f ${if(vm.animationPreview) "▶" else "✎"}",style=MaterialTheme.typography.labelMedium) }
-                TextButton(onClick={ help=true }) { Text("?") }
+            Row(Modifier.fillMaxWidth().heightIn(min=56.dp).padding(horizontal=4.dp),verticalAlignment=Alignment.CenterVertically) {
+                EditorIconButton(vm.tr("프로젝트 메뉴","Project menu"),"☰",!vm.busy,"projectMenu") { projects=true }
+                Text(vm.project.name+if(vm.dirty) " *" else "",modifier=Modifier.weight(1f).clickable { rename=true }.testTag("projectName"),maxLines=1,overflow=TextOverflow.Ellipsis,style=MaterialTheme.typography.titleMedium)
+                EditorIconButton(vm.tr("저장","Save"),"▣",!vm.busy,"save",vm::save)
+                EditorIconButton(vm.tr("실행 취소","Undo"),"↶",vm.canUndo && !vm.busy,"undo",vm::undo)
+                EditorIconButton(vm.tr("다시 실행","Redo"),"↷",vm.canRedo && !vm.busy,"redo",vm::redo)
+                EditorIconButton(vm.tr("빠른 시작","Quick start"),"?",true,"help") { help=true }
             }
             HorizontalDivider()
-            BoxWithConstraints(Modifier.weight(1f).fillMaxWidth()) {
-                val wide=maxWidth>=850.dp
-                val overlayWidth=if(maxWidth<500.dp) 196.dp else 250.dp
+            Box(Modifier.weight(1f).fillMaxWidth()) {
                 Row(Modifier.fillMaxSize()) {
-                    if(left && wide) Surface(Modifier.width(220.dp).fillMaxHeight(),tonalElevation=2.dp) { Layers(vm) }
+                    if(left && dualPaneScreen) Surface(Modifier.width(240.dp).fillMaxHeight(),tonalElevation=2.dp) { Layers(vm) }
                     Box(Modifier.weight(1f).fillMaxHeight()) {
                         AndroidView(factory={ surface },update={ it.update() },modifier=Modifier.fillMaxSize().testTag("modelCanvas"))
                         if(vm.project.parts.isEmpty()) Text(vm.tr("PNG를 가져와 시작하세요\n두 손가락: 확대·이동","Import PNGs to begin\nTwo fingers: zoom & pan"),Modifier.align(Alignment.Center).background(MaterialTheme.colorScheme.surface.copy(alpha=.9f)).padding(20.dp))
                         Text("${(vm.camera.zoom*100).roundToInt()}%",Modifier.align(Alignment.BottomStart).padding(8.dp).background(MaterialTheme.colorScheme.surface.copy(alpha=.85f)).padding(4.dp))
-                        if(!wide && left) Surface(Modifier.width(240.dp).fillMaxHeight().align(Alignment.CenterStart),tonalElevation=6.dp,shadowElevation=8.dp) { Layers(vm) }
-                        if(!wide && right) Surface(Modifier.width(overlayWidth).fillMaxHeight().align(Alignment.CenterEnd),tonalElevation=6.dp,shadowElevation=8.dp) { Properties(vm) }
                     }
-                    if(right && wide) Surface(Modifier.width(280.dp).fillMaxHeight(),tonalElevation=2.dp) { Properties(vm) }
+                    if(right && sidePropertiesScreen) Surface(Modifier.width(320.dp).fillMaxHeight(),tonalElevation=2.dp) { Properties(vm) }
                 }
                 if(vm.busy) Surface(Modifier.fillMaxSize(),color=MaterialTheme.colorScheme.surface.copy(alpha=.75f)) {
                     Box(contentAlignment=Alignment.Center) { CircularProgressIndicator() }
@@ -113,16 +116,40 @@ class MainActivity: ComponentActivity() {
             }
             HorizontalDivider()
             Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal=8.dp),verticalAlignment=Alignment.CenterVertically) {
-                TextButton(onClick={ left=!left; if(left && !wideScreen) right=false }) { Text(vm.tr("파츠","Parts")) }
-                TextButton(onClick={ right=!right; if(right && !wideScreen) left=false }) { Text(vm.tr("속성","Properties")) }
-                TextButton(onClick={ png.launch(arrayOf("image/png")) },enabled=!vm.busy) { Text("+ PNG") }
+                TextButton(onClick={ if(dualPaneScreen) left=!left else compactPanel=CompactEditorPanel.LAYERS },modifier=Modifier.testTag("panelParts")) { Text(vm.tr("파츠","Parts")) }
+                TextButton(onClick={ if(sidePropertiesScreen) right=!right else compactPanel=CompactEditorPanel.PROPERTIES },modifier=Modifier.testTag("panelProperties")) { Text(vm.tr("속성","Properties")) }
+                TextButton(onClick={ png.launch(arrayOf("image/png")) },enabled=!vm.busy,modifier=Modifier.testTag("importPng")) { Text("+ PNG") }
                 FilterChip(selected=vm.meshMode,onClick={ vm.meshMode=!vm.meshMode },label={ Text(if(vm.selectedDeformer?.kind==DeformerKind.WARP) vm.tr("격자","Grid edit") else vm.tr("메쉬","Mesh")) })
-                Spacer(Modifier.width(8.dp))
-                TextButton(onClick={ fit(vm,surface.width.toFloat(),surface.height.toFloat(),if(left && !wideScreen) 240*density else 0f,if(right && !wideScreen) (if(screenDp<500) 196 else 250)*density else 0f) }) { Text(vm.tr("전체 보기","Fit")) }
-                TextButton(onClick={ vm.grid=!vm.grid }) { Text(vm.tr("그리드","Grid")+if(vm.grid) " ✓" else "") }
-                TextButton(onClick={ vm.precise=!vm.precise }) { Text(vm.tr("정밀","Precision")+if(vm.precise) " ✓" else "") }
-                TextButton(onClick={ vm.snap=!vm.snap }) { Text(vm.tr("스냅","Snap")+if(vm.snap) " ✓" else "") }
-                TextButton(onClick={ vm.background=(vm.background+1)%3 }) { Text(vm.tr("배경","Background")) }
+                Box {
+                    TextButton(onClick={ toolsExpanded=true },modifier=Modifier.testTag("moreEditorTools")) { Text("⋯") }
+                    DropdownMenu(expanded=toolsExpanded,onDismissRequest={ toolsExpanded=false }) {
+                        DropdownMenuItem(text={ Text(vm.tr("전체 보기","Fit all")) },onClick={ fit(vm,surface.width.toFloat(),surface.height.toFloat()); toolsExpanded=false },modifier=Modifier.testTag("fitCanvas"))
+                        DropdownMenuItem(text={ Text(vm.tr("그리드","Grid")+if(vm.grid) " ✓" else "") },onClick={ vm.grid=!vm.grid; toolsExpanded=false },modifier=Modifier.testTag("toggleGrid"))
+                        DropdownMenuItem(text={ Text(vm.tr("정밀 이동","Precision")+if(vm.precise) " ✓" else "") },onClick={ vm.precise=!vm.precise; toolsExpanded=false })
+                        DropdownMenuItem(text={ Text(vm.tr("스냅","Snap")+if(vm.snap) " ✓" else "") },onClick={ vm.snap=!vm.snap; toolsExpanded=false })
+                        DropdownMenuItem(text={ Text(vm.tr("배경","Background")) },onClick={ vm.background=(vm.background+1)%3; toolsExpanded=false })
+                    }
+                }
+            }
+        }
+    }
+    compactPanel?.let { panel ->
+        val title=if(panel==CompactEditorPanel.LAYERS) vm.tr("파츠 및 디포머","Parts and deformers") else vm.tr("속성 및 파라미터","Properties and parameters")
+        ModalBottomSheet(
+            onDismissRequest={ compactPanel=null },
+            sheetState=rememberModalBottomSheetState(skipPartiallyExpanded=true),
+            modifier=Modifier.testTag("compactEditorSheet"),
+            dragHandle={ BottomSheetDefaults.DragHandle() }
+        ) {
+            Column(Modifier.fillMaxWidth().fillMaxHeight(.82f).testTag("compactEditorSheetContent")) {
+                Row(Modifier.fillMaxWidth().heightIn(min=48.dp).padding(start=16.dp,end=4.dp),verticalAlignment=Alignment.CenterVertically) {
+                    Text(title,Modifier.weight(1f),style=MaterialTheme.typography.titleMedium,maxLines=1,overflow=TextOverflow.Ellipsis)
+                    EditorIconButton(vm.tr("닫기","Close"),"×",true,"closeCompactPanel") { compactPanel=null }
+                }
+                HorizontalDivider()
+                Box(Modifier.weight(1f).fillMaxWidth()) {
+                    if(panel==CompactEditorPanel.LAYERS) Layers(vm) else Properties(vm)
+                }
             }
         }
     }
@@ -157,6 +184,12 @@ class MainActivity: ComponentActivity() {
     )) },confirmButton={ TextButton(onClick={ help=false }) { Text(vm.tr("확인","OK")) } })
 }
 
+@Composable private fun EditorIconButton(label: String,glyph: String,enabled: Boolean,tag: String,onClick: ()->Unit) {
+    IconButton(onClick=onClick,enabled=enabled,modifier=Modifier.testTag(tag).semantics { contentDescription=label }) {
+        Text(glyph,fontSize=20.sp,maxLines=1,color=if(enabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface.copy(alpha=.38f))
+    }
+}
+
 @Composable private fun AnimationExportDialog(vm: EditorViewModel,onDismiss: ()->Unit,onExport: (Int)->Unit) {
     val clip=vm.selectedAnimation
     var size by remember(clip?.id) { mutableIntStateOf(512) }
@@ -177,13 +210,13 @@ class MainActivity: ComponentActivity() {
     },confirmButton={ TextButton(onClick={ onExport(size) },enabled=canExport && !vm.busy,modifier=Modifier.testTag("startAnimationExport")) { Text(vm.tr("저장","Export")) } },dismissButton={ TextButton(onClick=onDismiss) { Text(vm.tr("취소","Cancel")) } })
 }
 
-private fun fit(vm: EditorViewModel,width: Float,height: Float,left: Float=0f,right: Float=0f) {
+private fun fit(vm: EditorViewModel,width: Float,height: Float) {
     val eval=RigEvaluator(vm.renderProject)
     val points=vm.renderProject.parts.filter { eval.visible(it) }.flatMap { eval.partWorld(it) }
     if(points.isEmpty() || width<=0 || height<=0) { vm.camera=Camera(); return }
     val minX=points.minOf { it.x }; val maxX=points.maxOf { it.x }; val minY=points.minOf { it.y }; val maxY=points.maxOf { it.y }
-    val zoom=min((width-left-right).coerceAtLeast(1f)/(maxX-minX+100),height/(maxY-minY+100)).coerceIn(.03f,20f)
-    vm.camera=Camera(Vec2((minX+maxX)/2-(left-right)/(2*zoom),(minY+maxY)/2),zoom)
+    val zoom=min(width/(maxX-minX+100),height/(maxY-minY+100)).coerceIn(.03f,20f)
+    vm.camera=Camera(Vec2((minX+maxX)/2,(minY+maxY)/2),zoom)
 }
 
 @Composable private fun Layers(vm: EditorViewModel) { HierarchyPanel(vm) }
