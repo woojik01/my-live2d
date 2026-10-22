@@ -161,7 +161,7 @@ class MainActivity: ComponentActivity() {
     AlertDialog(onDismissRequest=onDismiss,title={ Text(vm.tr("애니메이션 내보내기","Export animation")) },text={
         Column(Modifier.testTag("animationExportDialog"),verticalArrangement=Arrangement.spacedBy(8.dp)) {
             Text(vm.tr("선택한 클립을 투명 PNG 프레임 ZIP으로 저장합니다.","Save the selected clip as a ZIP of transparent PNG frames."))
-            Row(horizontalArrangement=Arrangement.spacedBy(4.dp)) {
+            Row(Modifier.horizontalScroll(rememberScrollState()),horizontalArrangement=Arrangement.spacedBy(4.dp)) {
                 AnimationSequenceExporter.OUTPUT_SIZES.forEach { option ->
                     FilterChip(selected=size==option,onClick={ size=option },label={ Text("${option}×$option") },modifier=Modifier.testTag("exportSize-$option"))
                 }
