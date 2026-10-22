@@ -51,6 +51,7 @@ class AnimationDeviceTest {
                 vm.moveSelectedAnimationKey(16)
                 vm.selectAnimationKey(track.keyframes.first().id)
                 vm.setSelectedKeyInterpolation(dev.mylive2d.core.Interpolation.HOLD)
+                vm.toggleAnimationPreview()
                 vm.seekAnimation(15)
                 assertEquals(1f,vm.renderProject.parameters.single().value)
                 vm.seekAnimation(16)
