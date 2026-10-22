@@ -136,6 +136,14 @@ class EditorViewModel(app: Application): AndroidViewModel(app) {
     fun export(uri: Uri) = operation {
         val p = project; withContext(Dispatchers.IO) { repository.export(p,uri) }; message(tr("프로젝트 내보내기 완료","Project exported"))
     }
+    fun exportAnimationSequence(uri: Uri, size: Int) = operation {
+        require(!keyEditing) { tr("키폼 편집을 먼저 마치세요","Finish keyform editing before exporting") }
+        stopPlayback()
+        val p = project
+        val clip = selectedAnimation ?: error(tr("애니메이션을 먼저 선택하세요","Select an animation first"))
+        withContext(Dispatchers.IO) { repository.exportAnimationSequence(p,clip.id,size,uri) }
+        message(tr("투명 PNG 애니메이션 프레임을 ZIP으로 저장했습니다","Transparent PNG animation frames exported as ZIP"))
+    }
     fun importPng(uris: List<Uri>) = operation {
         require(project.assets.size+uris.size <= 32 && project.parts.size+uris.size <= 64) { "Maximum 32 PNGs / 64 parts" }
         val imported = withContext(Dispatchers.IO) { uris.map { repository.importPng(it) } }

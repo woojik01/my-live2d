@@ -73,6 +73,11 @@ class AnimationDeviceTest {
             }
             compose.waitUntil(10_000) { !vm.dirty }
             assertEquals(vm.project,repo.open(projectId!!))
+            compose.onNodeWithTag("projectMenu").performClick()
+            compose.onNodeWithTag("exportAnimationSequence").assertIsDisplayed().performClick()
+            compose.onNodeWithTag("animationExportDialog").assertIsDisplayed()
+            compose.onNodeWithTag("exportSize-512").assertIsDisplayed()
+            compose.onNodeWithTag("startAnimationExport").assertIsDisplayed()
         } finally {
             compose.activityRule.scenario.onActivity { vm.stopPlayback() }
             compose.activityRule.scenario.close()
