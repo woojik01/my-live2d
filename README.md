@@ -2,7 +2,7 @@
 
 Android 스마트폰·태블릿용 독립 2D 캐릭터 모델 편집기. Kotlin + Jetpack Compose + OpenGL ES 2.0. 핵심 편집은 오프라인으로 동작하며 INTERNET 권한과 계정/서버를 사용하지 않습니다. 자체 `.mylive2d` ZIP/JSON/PNG 포맷을 사용하고 Cubism SDK·독점 소스·공식 파일 호환을 포함하지 않습니다.
 
-Phase 2 빌드/검증 진행 중. 실제 결과는 [Phase 2 검증 보고서](docs/PHASE2_VALIDATION.md)에 기록합니다. [Phase 1 검증 기록](docs/VALIDATION.md)은 이전 버전 기록입니다.
+Phase 2 빌드·APK 서명 검증 성공. JVM 25개와 Android API 35 에뮬레이터 7개 테스트 통과, Lint 오류 0개·경고 17개. [검증한 APK 다운로드](https://github.com/woojik01/my-live2d/actions/runs/39759563949/artifacts/12417895971) · [Phase 2 검증 보고서](docs/PHASE2_VALIDATION.md) · [PR #2](https://github.com/woojik01/my-live2d/pull/2). [Phase 1 검증 기록](docs/VALIDATION.md)은 이전 버전 기록입니다. 실물 기기·60FPS는 검증하지 않았습니다.
 
 ## 빌드 / 설치
 
