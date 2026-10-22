@@ -31,6 +31,19 @@ class EditorDeviceTest {
         assertEquals(p,reopened)
         repo.delete(p.id); image.delete()
     }
+    @Test fun backupRecoveryAfterCorruptLatestSave() = runBlocking {
+        val context=ApplicationProvider.getApplicationContext<Context>(); val repo=ProjectRepository(context)
+        val original=Project(name="Backup original")
+        repo.save(original); repo.save(original.copy(name="Latest"))
+        val file=File(context.filesDir,"projects/${original.id}.mylive2d")
+        file.writeText("corrupt ZIP")
+        assertEquals(original,repo.open(original.id))
+        // Recovered primary is repaired; another save must not replace the good backup with corrupt data.
+        repo.save(original.copy(name="Recovered edit"))
+        file.writeText("corrupt again")
+        assertEquals(original,repo.open(original.id))
+        repo.delete(original.id)
+    }
     @Test fun malformedPngFailsWithoutWritingProject() {
         val context=ApplicationProvider.getApplicationContext<Context>(); val repo=ProjectRepository(context)
         val bad=File(context.cacheDir,"bad.png").apply { writeText("not a png") }

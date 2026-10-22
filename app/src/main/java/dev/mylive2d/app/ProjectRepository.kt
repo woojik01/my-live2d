@@ -44,11 +44,15 @@ class ProjectRepository(private val context: Context) {
     suspend fun open(id: String): Project = mutex.withLock {
         require(id.matches(Regex("[A-Za-z0-9-]{1,80}")))
         val file = File(projects,"$id.mylive2d"); val backup = File(projects,"$id.bak")
+        var recovered = false
         val bundle = try { file.inputStream().use { ProjectArchive.read(it) } }
-        catch (e: Exception) { if(backup.exists()) backup.inputStream().use { ProjectArchive.read(it) } else throw e }
-        install(bundle)
+        catch (e: Exception) { if(backup.exists()) { recovered = true; backup.inputStream().use { ProjectArchive.read(it) } } else throw e }
+        val p = install(bundle)
+        if(recovered) Files.copy(backup.toPath(),file.toPath(),StandardCopyOption.REPLACE_EXISTING)
+        p
     }
     suspend fun delete(id: String) = mutex.withLock {
+        require(id.matches(Regex("[A-Za-z0-9-]{1,80}")))
         File(projects,"$id.mylive2d").delete(); File(projects,"$id.bak").delete()
         prefs.edit().remove("name-$id").apply()
     }
@@ -83,8 +87,8 @@ class ProjectRepository(private val context: Context) {
         } ?: error("Cannot read PNG")
         val opts = BitmapFactory.Options().apply { inJustDecodeBounds = true; inSampleSize = 1 }
         BitmapFactory.decodeByteArray(bytes,0,bytes.size,opts)
-        require(opts.outMimeType == "image/png" && opts.outWidth > 0 && opts.outHeight > 0) { "PNG required" }
-        while(opts.outWidth/opts.inSampleSize > 2048 || opts.outHeight/opts.inSampleSize > 2048) opts.inSampleSize *= 2
+        require(opts.outMimeType == "image/png" && opts.outWidth in 1..32768 && opts.outHeight in 1..32768) { "PNG required" }
+        while((opts.outWidth+opts.inSampleSize-1)/opts.inSampleSize > 2048 || (opts.outHeight+opts.inSampleSize-1)/opts.inSampleSize > 2048) opts.inSampleSize *= 2
         opts.inJustDecodeBounds = false
         val bitmap = BitmapFactory.decodeByteArray(bytes,0,bytes.size,opts) ?: error("Invalid PNG")
         val asset = Asset(width = bitmap.width,height = bitmap.height)

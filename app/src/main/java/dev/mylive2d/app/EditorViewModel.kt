@@ -136,7 +136,7 @@ class EditorViewModel(app: Application): AndroidViewModel(app) {
     fun deletePart() {
         val id = selectedId ?: return
         val parts = project.parts.filter { it.id != id }
-        change(project.copy(parts=parts,parameters=project.parameters.map { it.copy(bindings=it.bindings.filter { b -> b.partId!=id }) }))
+        change(project.copy(parts=parts,assets=project.assets.filter { a -> parts.any { it.assetId==a.id } },parameters=project.parameters.map { it.copy(bindings=it.bindings.filter { b -> b.partId!=id }) }))
         select(parts.lastOrNull()?.id)
     }
     fun generateMesh(columns: Int, rows: Int) {

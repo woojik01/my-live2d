@@ -78,6 +78,7 @@ class MainActivity: ComponentActivity() {
             HorizontalDivider()
             BoxWithConstraints(Modifier.weight(1f).fillMaxWidth()) {
                 val wide=maxWidth>=850.dp
+                val overlayWidth=if(maxWidth<500.dp) 196.dp else 250.dp
                 Row(Modifier.fillMaxSize()) {
                     if(left && wide) Surface(Modifier.width(220.dp).fillMaxHeight(),tonalElevation=2.dp) { Layers(vm) }
                     Box(Modifier.weight(1f).fillMaxHeight()) {
@@ -85,7 +86,7 @@ class MainActivity: ComponentActivity() {
                         if(vm.project.parts.isEmpty()) Text(vm.tr("PNG를 가져와 시작하세요\n두 손가락: 확대·이동","Import PNGs to begin\nTwo fingers: zoom & pan"),Modifier.align(Alignment.Center).background(MaterialTheme.colorScheme.surface.copy(alpha=.9f)).padding(20.dp))
                         Text("${(vm.camera.zoom*100).roundToInt()}%",Modifier.align(Alignment.BottomStart).padding(8.dp).background(MaterialTheme.colorScheme.surface.copy(alpha=.85f)).padding(4.dp))
                         if(!wide && left) Surface(Modifier.width(240.dp).fillMaxHeight().align(Alignment.CenterStart),tonalElevation=6.dp,shadowElevation=8.dp) { Layers(vm) }
-                        if(!wide && right) Surface(Modifier.width(if(maxWidth<500.dp) 196.dp else 250.dp).fillMaxHeight().align(Alignment.CenterEnd),tonalElevation=6.dp,shadowElevation=8.dp) { Properties(vm) }
+                        if(!wide && right) Surface(Modifier.width(overlayWidth).fillMaxHeight().align(Alignment.CenterEnd),tonalElevation=6.dp,shadowElevation=8.dp) { Properties(vm) }
                     }
                     if(right && wide) Surface(Modifier.width(280.dp).fillMaxHeight(),tonalElevation=2.dp) { Properties(vm) }
                 }

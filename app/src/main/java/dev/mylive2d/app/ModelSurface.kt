@@ -75,7 +75,7 @@ class ModelSurface(context: Context, private val vm: EditorViewModel): GLSurface
 }
 private data class Scene(val project: Project, val camera: Camera, val selected: String?, val mesh: Boolean, val grid: Boolean, val background: Int, val draft: List<Vec2>?)
 private class MeshRenderer(private val vm: EditorViewModel): GLSurfaceView.Renderer {
-    @Volatile var scene=Scene(Project(),Camera(),null,false,true,0)
+    @Volatile var scene=Scene(Project(),Camera(),null,false,true,0,null)
     private var width=1; private var height=1; private var program=0; private var backdrop=0
     private val textures=mutableMapOf<String,Int>(); private val failed=mutableSetOf<String>()
     override fun onSurfaceCreated(gl: GL10?,config: EGLConfig?) {

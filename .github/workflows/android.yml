@@ -38,6 +38,7 @@ jobs:
             core/build/reports/tests/test/
           retention-days: 14
   emulator:
+    needs: build
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -59,9 +60,16 @@ jobs:
           target: google_apis
           disable-animations: true
           script: ./gradlew --no-daemon :app:connectedDebugAndroidTest
+      - name: Collect GL screenshots
+        if: always()
+        run: |
+          mkdir -p app/build/reports/gl-screenshots
+          adb pull /sdcard/Android/data/dev.mylive2d.app/files/qa/. app/build/reports/gl-screenshots/ || true
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: android-device-test-reports
-          path: app/build/reports/androidTests/connected/
+          path: |
+            app/build/reports/androidTests/connected/
+            app/build/reports/gl-screenshots/
           retention-days: 14
