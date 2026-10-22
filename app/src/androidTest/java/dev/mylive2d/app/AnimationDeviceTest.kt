@@ -4,7 +4,7 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
-import androidx.compose.ui.test.assertExists
+import androidx.compose.ui.test.assertIsDisplayed
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import dev.mylive2d.core.AnimationEngine
 import dev.mylive2d.core.Project
@@ -36,7 +36,7 @@ class AnimationDeviceTest {
             }
             compose.onNodeWithTag("animationTimelineToggle").performClick()
             compose.onNodeWithTag("addAnimation").performClick()
-            compose.onNodeWithTag("animationPlayhead").assertExists()
+            compose.onNodeWithTag("animationPlayhead").assertIsDisplayed()
             compose.activityRule.scenario.onActivity { vm.addAnimationTrack(vm.parameterId!!) }
             compose.onNodeWithTag("recordAnimationKey").performClick()
             compose.activityRule.scenario.onActivity {

@@ -182,7 +182,7 @@ class EditorViewModel(app: Application): AndroidViewModel(app) {
         change(project.copy(parameters=project.parameters+param)); selectParameter(param.id)
     }
     fun addAnimation() = editSafely {
-        stopPlayback(); require(project.animations.size < AnimationEngine.MAX_CLIPS) { "Maximum ${AnimationEngine.MAX_CLIPS} clips" }
+        stopPlayback(); cancelKey(); require(project.animations.size < AnimationEngine.MAX_CLIPS) { "Maximum ${AnimationEngine.MAX_CLIPS} clips" }
         val clip=AnimationClip(name=tr("애니메이션 ${project.animations.size+1}","Animation ${project.animations.size+1}"))
         change(project.copy(animations=project.animations+clip)); selectAnimation(clip.id)
     }
@@ -193,7 +193,7 @@ class EditorViewModel(app: Application): AndroidViewModel(app) {
         tr("호흡","Breathing"),tr("호흡","Breath"),0f,120,listOf(0 to 0f,30 to .5f,60 to 1f,90 to .5f,119 to 0f)
     )
     private fun addExampleAnimation(title: String,parameterName: String,default: Float,duration: Int,keys: List<Pair<Int,Float>>) = editSafely {
-        stopPlayback(); require(project.animations.size < AnimationEngine.MAX_CLIPS) { "Maximum ${AnimationEngine.MAX_CLIPS} clips" }
+        stopPlayback(); cancelKey(); require(project.animations.size < AnimationEngine.MAX_CLIPS) { "Maximum ${AnimationEngine.MAX_CLIPS} clips" }
         val existing=project.parameters.firstOrNull { it.name==parameterName || it.name==if(english) (if(parameterName=="Eye open") "눈 개폐" else "호흡") else (if(parameterName=="눈 개폐") "Eye open" else "Breath") }
         val parameter=existing ?: run {
             require(project.parameters.size < 32) { "Parameter limit reached" }
@@ -207,7 +207,7 @@ class EditorViewModel(app: Application): AndroidViewModel(app) {
         change(project.copy(animations=project.animations+clip)); parameterId=parameter.id; selectAnimation(clip.id)
     }
     fun selectAnimation(id: String?) {
-        stopPlayback(); selectedAnimationId=project.animations.firstOrNull { it.id==id }?.id
+        stopPlayback(); cancelKey(); selectedAnimationId=project.animations.firstOrNull { it.id==id }?.id
         selectedTrackParameterId=selectedAnimation?.tracks?.firstOrNull()?.parameterId ?: project.parameters.firstOrNull()?.id
         selectedAnimationKeyId=null; animationFrame=0; animationPreview=true
     }
@@ -274,6 +274,7 @@ class EditorViewModel(app: Application): AndroidViewModel(app) {
     }
     fun togglePlayback() {
         if(playing) { stopPlayback(); return }
+        if(keyEditing) { message(tr("키폼 편집을 먼저 마치세요","Finish keyform editing before playback")); return }
         val clip=selectedAnimation ?: return
         if(clip.tracks.none { it.keyframes.isNotEmpty() }) { message(tr("재생할 키프레임을 먼저 기록하세요","Record at least one keyframe before playback")); return }
         cancelKey(); if(animationFrame>=clip.durationFrames-1) animationFrame=0
@@ -303,7 +304,7 @@ class EditorViewModel(app: Application): AndroidViewModel(app) {
         cancelKey(); change(ParameterEngine.blink(project,p.id,part.id)); message(tr("최솟값=닫힘 · 최댓값=열림 키폼 생성","Min=closed · max=open keyforms created"))
     }
     fun startKey() {
-        val param=parameter ?: return; if(selectedLocked) return
+        stopPlayback(); val param=parameter ?: return; if(selectedLocked) return
         val part=selected; val node=selectedDeformer
         if(part!=null) { draft=ParameterEngine.isolatedVertices(project,part,param.id); meshMode=true; meshTool=0 }
         else if(node!=null) deformerDraft=Rigging.isolatedPose(project,node,param.id)

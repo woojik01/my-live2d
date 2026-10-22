@@ -35,15 +35,15 @@ import dev.mylive2d.core.Interpolation
                 OutlinedButton(onClick=vm::addBreathExample,enabled=vm.project.animations.size<16) { Text(vm.tr("호흡 예제","Breathing example")) }
                 OutlinedButton(onClick=vm::addAnimation,enabled=vm.project.animations.size<16,modifier=Modifier.testTag("addAnimation")) { Text(vm.tr("+ 새 애니메이션","+ Animation")) }
                 vm.selectedAnimation?.let {
-                    TextButton(onClick={ renaming=true }) { Text(vm.tr("이름","Rename")) }
-                    TextButton(onClick={ settings=true }) { Text(vm.tr("길이·FPS","Length · FPS")) }
-                    TextButton(onClick=vm::deleteAnimation) { Text(vm.tr("삭제","Delete")) }
+                    TextButton(onClick={ renaming=true },enabled=!vm.keyEditing && !vm.playing) { Text(vm.tr("이름","Rename")) }
+                    TextButton(onClick={ settings=true },enabled=!vm.keyEditing && !vm.playing) { Text(vm.tr("길이·FPS","Length · FPS")) }
+                    TextButton(onClick=vm::deleteAnimation,enabled=!vm.keyEditing && !vm.playing) { Text(vm.tr("삭제","Delete")) }
                 }
             }
             val clip=vm.selectedAnimation
             if(clip!=null) {
                 Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),verticalAlignment=Alignment.CenterVertically) {
-                    Button(onClick=vm::togglePlayback,modifier=Modifier.testTag("animationPlay")) { Text(if(vm.playing) vm.tr("일시정지","Pause") else vm.tr("재생","Play")) }
+                    Button(onClick=vm::togglePlayback,enabled=!vm.keyEditing,modifier=Modifier.testTag("animationPlay")) { Text(if(vm.playing) vm.tr("일시정지","Pause") else vm.tr("재생","Play")) }
                     TextButton(onClick={ vm.stopPlayback(); vm.seekAnimation(0) }) { Text("⏮") }
                     FilterChip(selected=clip.loop,onClick={ vm.setAnimationLoop(!clip.loop) },label={ Text(vm.tr("반복","Loop")) })
                     FilterChip(selected=vm.animationPreview,onClick=vm::toggleAnimationPreview,label={ Text(if(vm.animationPreview) vm.tr("미리보기","Preview") else vm.tr("값 편집","Edit values")) })
