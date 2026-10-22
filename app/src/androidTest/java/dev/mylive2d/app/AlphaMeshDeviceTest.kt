@@ -37,10 +37,17 @@ class AlphaMeshDeviceTest {
             compose.activityRule.scenario.onActivity { vm.newProject("Alpha mesh QA") }; ready()
             compose.activityRule.scenario.onActivity { vm.importPng(listOf(Uri.fromFile(image))) }; ready()
             compose.onNodeWithTag("panelProperties").performClick()
+            compose.waitUntil(10_000) {
+                compose.onAllNodesWithTag("compactEditorSheetContent").fetchSemanticsNodes().isNotEmpty() ||
+                    compose.onAllNodesWithTag("autoAlphaMesh").fetchSemanticsNodes().isNotEmpty()
+            }
             var original: Project?=null
             compose.activityRule.scenario.onActivity {
                 projectId=vm.project.id
                 vm.addParameter("Eye",0f,1f,1f); vm.blink(); original=vm.project
+            }
+            compose.waitUntil(10_000) {
+                compose.onAllNodesWithTag("autoAlphaMesh").fetchSemanticsNodes().isNotEmpty()
             }
             compose.onNodeWithTag("autoAlphaMesh").performScrollTo().performClick()
             compose.onNodeWithTag("alphaThreshold").performScrollTo().performTextReplacement("0")
