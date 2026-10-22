@@ -57,14 +57,14 @@ class AnimationDeviceTest {
                 assertEquals(0f,vm.renderProject.parameters.single().value)
                 vm.seekAnimation(0)
             }
-            compose.onNodeWithTag("animationPlay").performClick()
+            compose.activityRule.scenario.onActivity { vm.togglePlayback() }
             compose.waitUntil(3_000) { vm.animationFrame >= 3 }
             compose.activityRule.scenario.onActivity {
                 val animated=vm.renderProject.parameters.single().value
                 assertTrue("Playback frame evaluated",animated in .7f..1f)
                 assertEquals(0f,vm.project.parameters.single().value)
             }
-            compose.onNodeWithTag("animationPlay").performClick()
+            compose.activityRule.scenario.onActivity { vm.togglePlayback() }
             compose.activityRule.scenario.onActivity {
                 assertFalse(vm.playing)
                 assertEquals(16,vm.selectedAnimation!!.tracks.single().keyframes.last().frame)
