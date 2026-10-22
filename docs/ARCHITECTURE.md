@@ -1,35 +1,13 @@
-# 기술 설계
+# 전체 구조 — Phase 2
 
-## 모듈
+core는 Android와 독립적인 Kotlin/JVM 모듈이다. Model의 불변 문서, ParameterEngine의 메쉬 보간, Rigging/RigEvaluator의 계층·디포머 평가, MeshTopology의 토폴로지 갱신, History의 스냅샷 Undo, Validation/RigValidation의 참조/범위/계층 검사, ProjectArchive/ProjectMigration의 자체 포맷을 포함한다. [리깅 상세](RIGGING.md)를 참조한다.
 
-`core`는 Android에 의존하지 않는 Kotlin/JVM 모듈이다. `Project`, `Asset`, `Part`, `Mesh`, `Parameter`, `Binding`, `Keyform`을 불변 데이터로 표현한다. `ParameterEngine`, `Camera`, `History`, `Validation`, `ProjectArchive`를 포함한다.
+app의 EditorViewModel이 프로젝트·선택·제스처·키폼 초안·히스토리를 관리한다. MainActivity/RigPanels는 Compose 화면이다. ModelSurface는 터치를 월드 좌표로 전달하고 같은 RigEvaluator 결과로 GL ES 2.0 삼각형·격자·손잡이를 그린다. GL 스레드에는 불변 Scene을 넘긴다. renderProject는 초안을 임시 키폼으로 합성하며 실제 문서는 기록 시에만 바꾼다.
 
-`app`은 Compose 화면, `EditorViewModel`, `ProjectRepository`, `ModelSurface`로 구성한다. UI 입력은 ViewModel을 거쳐 프로젝트를 바꾸고 GL 스레드는 불변 Scene 스냅샷을 읽는다. 이미지 바이트를 Undo마다 복사하지 않고 asset ID를 참조한다.
+텍스처는 asset ID별 GPU 캐시, 비트맵은 업로드 직후 해제한다. premultiplied alpha에 ONE/ONE_MINUS_SRC_ALPHA를 쓰고 context 재생성 시 셰이더/텍스처를 재생성한다. 사용하지 않는 GPU 텍스처를 지운다. RENDERMODE_WHEN_DIRTY로 상태 변경 시 렌더를 요청한다. 현재 CPU 평가/버퍼 생성은 파츠·정점 수에 비례하며 FPS 보장은 없고 후속 계측 대상이다.
 
-## 좌표 / 렌더링
+ProjectRepository는 Android SAF와 내부 파일을 연결한다. 외부 PNG는 내부로 복사한다. 저장은 IO 코루틴과 Mutex, 임시 ZIP→fsync→백업→atomic move(미지원 시 replace) 순서다. 손상된 최신 파일은 정상 백업으로 복구하고 복구된 주 파일을 수리한다. v1은 최초 열기 때 별도 원본을 보존한다. 외부 저장소 공급자까지 원자적 교체를 보장하지 않는다.
 
-모델 단위는 원본 이미지 픽셀, +Y는 아래다. 정점은 파츠 중심 기준 로컬 좌표, UV는 최초 격자의 0..1이다. 로컬 정점 → 파츠 배율/회전/이동 → 월드 → 카메라 → 화면 → NDC 순으로 변환한다. 터치 정점 이동은 카메라와 파츠 변환의 역변환을 쓴다. 카메라 변경은 모델 데이터를 수정하지 않는다. 핀치는 초점 아래의 월드 좌표를 보존한다.
+편집은 불변 문서 스냅샷 최대40개를 공유하고 이미지 바이트는 이력에 복사하지 않는다. 파츠/정점/디포머 드래그와 파라미터/투명도 슬라이더는 제스처 단위로 기록한다. 토폴로지 변경은 UV/모든 키폼/인덱스를 하나의 문서 변경으로 반영한다. 초안은 기록 전 Undo/저장에 넣지 않는다. 카메라와 선택은 모델 데이터 밖이다.
 
-OpenGL ES 2.0 / GLSurfaceView / RGBA PNG / 삼각형 인덱스 렌더링. Android PNG의 premultiplied alpha에 맞춰 ONE, ONE_MINUS_SRC_ALPHA 블렌딩을 쓴다. GL 컨텍스트가 재생성되면 셰이더·텍스처를 다시 올린다. CPU 비트맵은 업로드 후 해제한다. 사용하지 않는 GPU 텍스처도 삭제한다. RENDERMODE_WHEN_DIRTY로 입력·프로젝트 변경 때만 렌더링한다. 프레임별 버퍼 생성 최적화와 FPS 계측은 후속 과제다.
-
-## 키폼
-
-한 파라미터의 한 파츠 바인딩은 `value + 전체 로컬 정점 배열` 목록이다. 키 사이를 선형 보간하고 범위 밖은 양 끝 모양을 쓴다. UV와 삼각형 연결은 바꾸지 않는다. 평가 결과는 기본 메쉬에 대한 변위로 적용된다. 복수 파라미터의 단순 변위 합산은 엔진에 있으나 Phase 1 UI의 사용자 키폼 편집은 한 파츠/한 파라미터를 대상으로 제한한다. 2차원 파라미터 공간 보간이나 순서 의존 디포머는 Phase 2 설계 대상이다.
-
-기본 눈 개폐 프리셋은 최솟값에서 Y 높이를 4%로, 최댓값에서 기본 정점을 쓴다. 이는 자체 메쉬 변형이며 눈꺼풀 마스킹은 아니다. 사용자 키폼 편집은 평가된 정점의 별도 초안을 만들고 기록할 때만 프로젝트/Undo/자동 저장에 반영한다.
-
-## 저장 / 복구
-
-SAF OpenMultipleDocuments / OpenDocument / CreateDocument로 사용자가 지정한 파일만 접근한다. PNG는 앱 내부에 복사하므로 외부 URI 권한이 사라져도 프로젝트는 유지된다. 내부 ZIP을 임시 파일에 쓰고 fsync 후 기존 정상 파일을 .bak으로 복사, 같은 디렉토리에서 atomic move를 시도한다. 지원되지 않으면 replace move를 사용한다. 현재 ZIP 읽기 실패 시 백업을 시도한다. 내보내기 외부 공급자에는 원자적 교체를 보장할 수 없다.
-
-IO Mutex로 저장·열기·삭제를 직렬화한다. 자동 저장은 0.8초 debounce, ON_STOP에서도 저장한다. ON_STOP 저장은 OS 프로세스 종료 전 완료 보장이 아니므로 명시적 저장도 제공한다. 최근 목록은 내부 파일 + SharedPreferences 이름 캐시다. 가져오기는 전부 검증한 후 새 프로젝트/asset ID로 설치한다. ZIP entry를 파일 경로로 직접 추출하지 않는다.
-
-프로젝트 파일 삭제는 해당 ZIP/백업을 지운다. 이미지 캐시는 Undo·복제·다른 프로젝트 참조를 안전하게 보존하기 위해 즉시 청소하지 않는다. 참조 기반 캐시 GC는 후속 과제이며 데이터가 많으면 앱 내부 디스크 사용량이 증가할 수 있다.
-
-## Undo
-
-최대 40개의 불변 프로젝트 스냅샷. 정점/파츠 드래그는 제스처 시작~끝을 한 단위로 기록한다. 새 편집은 redo 분기를 지운다. 카메라·선택·테마는 이력 밖이다. 파라미터·투명도 슬라이더도 드래그 전체를 한 편집 단위로 기록한다.
-
-## 보안과 한계
-
-포맷 버전, ID, 참조, 정점/UV/인덱스, 파라미터 범위, 이미지 개수/크기를 검사한다. ZIP 중복/경로 탈출/알 수 없는 entry/해제 용량 초과를 거부한다. PNG 시그니처 + 실제 BitmapFactory 디코딩으로 검증한다. 60FPS 및 OOM 방지는 실기기별 계측이 필요하며 보장하지 않는다. 앱은 INTERNET 권한을 선언하지 않는다.
+PNG 디코딩 크기·실제 MIME, 포맷/버전·ID·UV·인덱스·키폼·부모·순환·개수·크기·해제 용량을 검증한다. ZIP entry를 임의 경로로 추출하지 않는다. 원본이 아닌 새 asset ID로 가져와 기존 파일 덮어쓰기를 막는다. 앱은 INTERNET 권한을 선언하지 않는다.

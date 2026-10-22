@@ -9,7 +9,7 @@ import dev.mylive2d.core.*
 import kotlinx.coroutines.*
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.receiveAsFlow
-import java.util.Locale
+import kotlin.math.*
 
 class EditorViewModel(app: Application): AndroidViewModel(app) {
     val repository = ProjectRepository(app)
@@ -21,6 +21,10 @@ class EditorViewModel(app: Application): AndroidViewModel(app) {
     var canUndo by mutableStateOf(false); private set
     var canRedo by mutableStateOf(false); private set
     var selectedId by mutableStateOf<String?>(null)
+    var selectedDeformerId by mutableStateOf<String?>(null)
+    var selectedVertex by mutableIntStateOf(-1)
+    var meshTool by mutableIntStateOf(0) // 0 move, 1 insert, 2 remove
+    var deformerDraft by mutableStateOf<DeformerPose?>(null); private set
     var parameterId by mutableStateOf<String?>(null)
     var keyEditing by mutableStateOf(false); private set
     var draft by mutableStateOf<List<Vec2>?>(null); private set
@@ -42,6 +46,18 @@ class EditorViewModel(app: Application): AndroidViewModel(app) {
     private val events = Channel<String>(Channel.BUFFERED)
     val messages = events.receiveAsFlow()
     val selected get() = project.parts.firstOrNull { it.id == selectedId }
+    val selectedDeformer get() = project.deformers.firstOrNull { it.id==selectedDeformerId }
+    val selectedLocked get() = selected?.let { RigEvaluator(project).locked(it) } ?: selectedDeformer?.let { RigEvaluator(project).locked(it) } ?: true
+    val renderProject: Project get() {
+        val parameter=parameterId ?: return project
+        if(!keyEditing) return project
+        selected?.let { part -> draft?.let { return ParameterEngine.record(project,parameter,part.id,it) } }
+        selectedDeformer?.let { node -> deformerDraft?.let { return Rigging.record(project,parameter,node.id,it) } }
+        return project
+    }
+    val hasDeformerKeys get() = selectedDeformerId?.let { id -> project.parameters.any { p -> p.deformerBindings.any { it.deformerId==id } } } ?: false
+    fun keyValues(p: Parameter): List<Float> = selectedId?.let { id -> p.bindings.firstOrNull { it.partId==id }?.keys?.map { it.value } }
+        ?: selectedDeformerId?.let { id -> p.deformerBindings.firstOrNull { it.deformerId==id }?.keys?.map { it.value } } ?: emptyList()
     val parameter get() = project.parameters.firstOrNull { it.id == parameterId }
     init {
         viewModelScope.launch {
@@ -61,12 +77,13 @@ class EditorViewModel(app: Application): AndroidViewModel(app) {
     private fun refreshRecent() { recent = repository.recent() }
     private fun adoptProject(p: Project) {
         project = p; history = History(p); selectedId = p.parts.lastOrNull()?.id; parameterId = p.parameters.firstOrNull()?.id
-        keyEditing = false; draft = null; gestureStart = null; camera = Camera(); dirty = false; revision++; syncHistory()
+        keyEditing = false; draft = null; deformerDraft=null; selectedDeformerId=null; selectedVertex=-1; gestureStart = null; camera = Camera(); dirty = false; revision++; syncHistory()
         repository.active = p.id
     }
     private fun syncHistory() { canUndo = history.canUndo; canRedo = history.canRedo }
     fun change(p: Project) {
         if(busy || p == project) return
+        try { Validation.check(p) } catch(e: Exception) { failure(e); return }
         history.commit(p); project = p; syncHistory(); dirty = true; revision++; autosave()
     }
     private fun autosave() {
@@ -116,10 +133,11 @@ class EditorViewModel(app: Application): AndroidViewModel(app) {
         val next = project.copy(assets=assets,parts=project.parts+imported.map { i ->
             Part(name=i.name,assetId=i.asset.id,mesh=Mesh.grid(i.asset.width.toFloat(),i.asset.height.toFloat()))
         })
-        history.commit(next); project = next; syncHistory(); dirty = true; revision++; selectedId = next.parts.lastOrNull()?.id; cancelKey(); autosave()
+        history.commit(next); project = next; syncHistory(); dirty = true; revision++; select(next.parts.lastOrNull()?.id); autosave()
         message(tr("PNG 가져옴 · 파츠를 이동해 배치하세요","PNG imported · move parts into place"))
     }
-    fun select(id: String?) { cancelKey(); selectedId = id }
+    fun select(id: String?) { cancelKey(); selectedId = id; selectedDeformerId=null; selectedVertex=-1 }
+    fun selectDeformer(id: String?) { cancelKey(); selectedDeformerId=id; selectedId=null; selectedVertex=-1; meshMode=selectedDeformer?.kind==DeformerKind.WARP }
     fun selectParameter(id: String?) { cancelKey(); parameterId = id }
     fun rename(name: String) { if(name.isNotBlank()) change(project.copy(name=name.trim().take(120))) }
     fun updatePart(edit: (Part)->Part) { selected?.let { old -> change(project.copy(parts=project.parts.map { if(it.id==old.id) edit(it) else it })) } }
@@ -140,7 +158,7 @@ class EditorViewModel(app: Application): AndroidViewModel(app) {
         select(parts.lastOrNull()?.id)
     }
     fun generateMesh(columns: Int, rows: Int) {
-        val part = selected ?: return; if(part.locked) return
+        val part = selected ?: return; if(selectedLocked) return
         val asset = project.assets.first { it.id == part.assetId }
         cancelKey()
         change(project.copy(parts=project.parts.map { if(it.id != part.id) it else it.copy(mesh=Mesh.grid(asset.width.toFloat(),asset.height.toFloat(),columns,rows)) },
@@ -158,27 +176,32 @@ class EditorViewModel(app: Application): AndroidViewModel(app) {
     }
     fun deleteParameter() { val id=parameterId ?: return; cancelKey(); change(project.copy(parameters=project.parameters.filter { it.id!=id })); parameterId=project.parameters.firstOrNull()?.id }
     fun blink() {
-        val part = selected ?: return; val p = parameter ?: return; if(part.locked) return
+        val part = selected ?: return; val p = parameter ?: return; if(selectedLocked) return
         cancelKey(); change(ParameterEngine.blink(project,p.id,part.id)); message(tr("최솟값=닫힘 · 최댓값=열림 키폼 생성","Min=closed · max=open keyforms created"))
     }
     fun startKey() {
-        val part = selected ?: return; val p=parameter ?: return; if(part.locked) return
-        if(project.parameters.any { it.id!=p.id && it.bindings.any { b-> b.partId==part.id } }) {
-            message(tr("Phase 1에서는 파츠당 한 파라미터로 키폼을 편집하세요","Phase 1 keyform editing supports one parameter per part")); return
-        }
-        draft=ParameterEngine.vertices(project,part); keyEditing=true; meshMode=true
+        val param=parameter ?: return; if(selectedLocked) return
+        val part=selected; val node=selectedDeformer
+        if(part!=null) { draft=ParameterEngine.isolatedVertices(project,part,param.id); meshMode=true; meshTool=0 }
+        else if(node!=null) deformerDraft=Rigging.isolatedPose(project,node,param.id)
+        else return
+        keyEditing=true
     }
     fun commitKey() {
-        val part=selected ?: return; val p=parameter ?: return; val pose=draft ?: return
-        if((p.bindings.firstOrNull { it.partId==part.id }?.keys?.size ?: 0) >= 32) { message("Maximum 32 keyforms"); return }
-        change(ParameterEngine.record(project,p.id,part.id,pose)); cancelKey()
+        val p=parameter ?: return
+        val values=keyValues(p)
+        if(values.size>=32 && values.none { abs(it-p.value)<.00001f }) { message(tr("키폼은 최대 32개입니다","Maximum 32 keyforms")); return }
+        selected?.let { part -> draft?.let { change(ParameterEngine.record(project,p.id,part.id,it)) } }
+        selectedDeformer?.let { node -> deformerDraft?.let { change(Rigging.record(project,p.id,node.id,it)) } }
+        cancelKey()
     }
-    fun cancelKey() { keyEditing=false; draft=null }
+    fun cancelKey() { keyEditing=false; draft=null; deformerDraft=null }
     fun deleteKey() {
-        val p=parameter ?: return; val part=selected ?: return
-        change(project.copy(parameters=project.parameters.map { if(it.id!=p.id) it else it.copy(bindings=it.bindings.mapNotNull { b ->
-            if(b.partId!=part.id) b else b.keys.filter { kotlin.math.abs(it.value-p.value)>.00001f }.let { if(it.isEmpty()) null else b.copy(keys=it) }
-        }) })); cancelKey()
+        val p=parameter ?: return; if(selectedLocked) return
+        change(project.copy(parameters=project.parameters.map { if(it.id!=p.id) it else it.copy(
+            bindings=it.bindings.mapNotNull { b -> if(b.partId!=selectedId) b else b.keys.filter { k -> abs(k.value-p.value)>.00001f }.let { keys -> if(keys.isEmpty()) null else b.copy(keys=keys) } },
+            deformerBindings=it.deformerBindings.mapNotNull { b -> if(b.deformerId!=selectedDeformerId) b else b.keys.filter { k -> abs(k.value-p.value)>.00001f }.let { keys -> if(keys.isEmpty()) null else b.copy(keys=keys) } }
+        ) })); cancelKey()
     }
     fun previewParameter(id: String, value: Float) {
         if(busy || keyEditing) return
@@ -186,17 +209,19 @@ class EditorViewModel(app: Application): AndroidViewModel(app) {
         project=project.copy(parameters=project.parameters.map { if(it.id==id) it.copy(value=value.coerceIn(it.min,it.max)) else it })
     }
     fun previewOpacity(value: Float) {
-        val part=selected ?: return; if(busy || part.locked) return
+        val part=selected ?: return; if(busy || selectedLocked) return
         if(gestureStart==null) beginGesture()
         project=project.copy(parts=project.parts.map { if(it.id==part.id) it.copy(opacity=value) else it })
     }
     fun beginGesture() { gestureStart=project; rawPartPosition=selected?.transform?.position; rawVertexPosition=null; rawVertexIndex=-1 }
     fun endGesture() {
         val initial = gestureStart ?: return; gestureStart=null
-        if(initial!=project) { history.commit(project); syncHistory(); dirty=true; revision++; autosave() }
+        if(initial!=project) {
+            try { Validation.check(project) } catch(e: Exception) { project=initial; failure(e); return }
+            history.commit(project); syncHistory(); dirty=true; revision++; autosave() }
     }
     fun movePart(delta: Vec2) {
-        val part=selected ?: return; if(busy || part.locked || keyEditing) return
+        val part=selected ?: return; if(busy || selectedLocked || keyEditing) return
         val raw=(rawPartPosition ?: part.transform.position)+delta*(if(precise) .2f else 1f)
         rawPartPosition=raw
         var pos=raw
@@ -204,7 +229,7 @@ class EditorViewModel(app: Application): AndroidViewModel(app) {
         project=project.copy(parts=project.parts.map { if(it.id==part.id) it.copy(transform=it.transform.copy(position=pos)) else it })
     }
     fun moveVertex(index: Int, delta: Vec2) {
-        val part=selected ?: return; if(busy || part.locked) return
+        val part=selected ?: return; if(busy || selectedLocked) return
         val source=if(keyEditing) draft ?: return else part.mesh.vertices
         if(index !in source.indices) return
         if(!keyEditing && project.parameters.any { it.bindings.any { b -> b.partId==part.id } }) { message(tr("키폼 편집을 켜세요","Enable keyform editing")); return }
@@ -216,7 +241,107 @@ class EditorViewModel(app: Application): AndroidViewModel(app) {
         val points=source.mapIndexed { i,v -> if(i==index) pos else v }
         if(keyEditing) draft=points else project=project.copy(parts=project.parts.map { if(it.id==part.id) it.copy(mesh=it.mesh.copy(vertices=points)) else it })
     }
+    private fun editSafely(block: () -> Unit) { try { block() } catch(e: Exception) { failure(e) } }
+    fun addDeformer(kind: DeformerKind) = editSafely {
+        if(busy || keyEditing || project.deformers.size>=64 || ((selected!=null || selectedDeformer!=null) && selectedLocked)) return@editSafely
+        val eval=RigEvaluator(project); val part=selected; val oldNode=selectedDeformer
+        val parent=part?.parentId ?: oldNode?.parentId
+        val targets=oldNode?.let { Rigging.subtree(project,it.id) }
+        val points=when {
+            part!=null -> eval.partWorld(part)
+            targets!=null -> project.parts.filter { it.parentId in targets }.flatMap { eval.partWorld(it) }
+            else -> emptyList()
+        }.map { eval.worldToParent(parent,it) }
+        val center=if(points.isEmpty()) eval.worldToParent(parent,camera.center) else Vec2((points.minOf { it.x }+points.maxOf { it.x })/2,(points.minOf { it.y }+points.maxOf { it.y })/2)
+        val width=if(points.isEmpty()) 300f else max(40f,points.maxOf { it.x }-points.minOf { it.x }+40)
+        val height=if(points.isEmpty()) 300f else max(40f,points.maxOf { it.y }-points.minOf { it.y }+40)
+        val label=when(kind) { DeformerKind.GROUP -> tr("그룹","Group"); DeformerKind.ROTATION -> tr("회전 디포머","Rotation deformer"); DeformerKind.WARP -> tr("워프 디포머","Warp deformer") }
+        var node=Deformer(name=label,kind=kind,parentId=parent,pivot=center,origin=center-Vec2(width/2,height/2),width=width,height=height)
+        if(kind==DeformerKind.WARP) node=node.copy(controls=node.restControls())
+        var next=project.copy(deformers=project.deformers+node)
+        val child=part?.id ?: oldNode?.id
+        if(child!=null) next=Rigging.reparent(next,child,node.id)
+        change(next); if(project.deformers.any { it.id==node.id }) selectDeformer(node.id)
+    }
+    fun setParent(parentId: String?) = editSafely {
+        if(busy || keyEditing || selectedLocked) return@editSafely
+        val id=selectedId ?: selectedDeformerId ?: return@editSafely
+        change(Rigging.reparent(project,id,parentId))
+    }
+    fun updateDeformer(edit: (Deformer)->Deformer) {
+        val node=selectedDeformer ?: return
+        if(keyEditing) return
+        change(project.copy(deformers=project.deformers.map { if(it.id==node.id) edit(it) else it }))
+    }
+    fun updateDeformerPose(edit: (DeformerPose)->DeformerPose) = editSafely {
+        val node=selectedDeformer ?: return@editSafely; if(busy || selectedLocked) return@editSafely
+        if(keyEditing) {
+            val next=edit(deformerDraft ?: return@editSafely)
+            val check=Rigging.record(project,parameterId ?: return@editSafely,node.id,next)
+            Validation.check(check); deformerDraft=next
+        } else {
+            if(hasDeformerKeys) { message(tr("키폼 편집을 켜세요","Enable keyform editing")); return@editSafely }
+            val pose=edit(node.basePose()); updateDeformer { it.copy(transform=pose.transform,controls=pose.controls) }
+        }
+    }
+    fun removeDeformer() {
+        val node=selectedDeformer ?: return; if(selectedLocked || keyEditing) return
+        change(Rigging.removeSubtree(project,node.id)); select(project.parts.lastOrNull()?.id)
+    }
+    fun addMeshVertex(world: Vec2) = editSafely {
+        val part=selected ?: return@editSafely; if(selectedLocked || keyEditing) return@editSafely
+        val render=renderProject; val eval=RigEvaluator(render)
+        val hit=MeshTopology.hit(part.mesh,eval.partWorld(part),world) ?: return@editSafely
+        change(MeshTopology.insert(project,part.id,hit)); selectedVertex=project.parts.first { it.id==part.id }.mesh.vertices.lastIndex
+    }
+    fun removeMeshVertex(index: Int=selectedVertex) = editSafely {
+        val part=selected ?: return@editSafely; if(selectedLocked || keyEditing) return@editSafely
+        change(MeshTopology.remove(project,part.id,index)); selectedVertex=-1
+    }
+    fun moveElementWorld(delta: Vec2) = editSafely {
+        if(busy || selectedLocked) return@editSafely
+        val eval=RigEvaluator(renderProject)
+        selected?.let { part ->
+            val anchor=eval.parentToWorld(part.parentId,part.transform.position)
+            val local=eval.worldToParent(part.parentId,anchor+delta)-part.transform.position
+            movePart(local); return@editSafely
+        }
+        val node=selectedDeformer ?: return@editSafely
+        if(!keyEditing && hasDeformerKeys) return@editSafely
+        val pose=eval.pose(node.id)
+        val world=eval.pivotWorld(node)
+        val local=eval.worldToParent(node.parentId,world+delta*(if(precise) .2f else 1f))-(node.pivot+pose.transform.position)
+        val source=deformerDraft ?: node.basePose()
+        val next=source.copy(transform=source.transform.copy(position=source.transform.position+local))
+        if(keyEditing) deformerDraft=next else project=project.copy(deformers=project.deformers.map { if(it.id==node.id) it.copy(transform=next.transform) else it })
+    }
+    fun moveVertexWorld(index: Int,delta: Vec2) = editSafely {
+        val part=selected ?: return@editSafely
+        val eval=RigEvaluator(renderProject); val current=ParameterEngine.vertices(renderProject,part)
+        if(index !in current.indices) return@editSafely
+        val world=eval.partWorld(part,current)[index]
+        val local=eval.partLocal(part,world+delta)-current[index]
+        moveVertex(index,local)
+    }
+    fun moveWarpControl(index: Int,delta: Vec2) = editSafely {
+        val node=selectedDeformer ?: return@editSafely; if(selectedLocked || (!keyEditing && hasDeformerKeys)) return@editSafely
+        val eval=RigEvaluator(renderProject); val pose=eval.pose(node.id)
+        if(index !in pose.controls.indices) return@editSafely
+        val local=eval.controlLocal(node,eval.controlWorld(node)[index]+delta*(if(precise) .2f else 1f))-pose.controls[index]
+        val source=deformerDraft ?: node.basePose()
+        val points=source.controls.mapIndexed { i,p -> if(i==index) p+local else p }
+        if(keyEditing) deformerDraft=source.copy(controls=points) else project=project.copy(deformers=project.deformers.map { if(it.id==node.id) it.copy(controls=points) else it })
+    }
+    fun rotateDeformer(from: Vec2,to: Vec2) = editSafely {
+        val node=selectedDeformer ?: return@editSafely; if(selectedLocked || (!keyEditing && hasDeformerKeys)) return@editSafely
+        val eval=RigEvaluator(renderProject); val pose=eval.pose(node.id); val center=node.pivot+pose.transform.position
+        val a=eval.worldToParent(node.parentId,from)-center; val b=eval.worldToParent(node.parentId,to)-center
+        var angle=(atan2(b.y,b.x)-atan2(a.y,a.x))*180/PI.toFloat()
+        if(angle>180) angle-=360; if(angle< -180) angle+=360
+        val source=deformerDraft ?: node.basePose(); val next=source.copy(transform=source.transform.copy(rotation=source.transform.rotation+angle*(if(precise) .2f else 1f)))
+        if(keyEditing) deformerDraft=next else project=project.copy(deformers=project.deformers.map { if(it.id==node.id) it.copy(transform=next.transform) else it })
+    }
     fun undo() { cancelKey(); project=history.undo(); syncHistory(); sanitizeSelection(); dirty=true; revision++; autosave() }
     fun redo() { cancelKey(); project=history.redo(); syncHistory(); sanitizeSelection(); dirty=true; revision++; autosave() }
-    private fun sanitizeSelection() { if(project.parts.none { it.id==selectedId }) selectedId=project.parts.lastOrNull()?.id; if(project.parameters.none { it.id==parameterId }) parameterId=project.parameters.firstOrNull()?.id }
+    private fun sanitizeSelection() { if(project.deformers.none { it.id==selectedDeformerId }) selectedDeformerId=null; selectedVertex=-1; if(selectedDeformerId!=null) { selectedId=null; return }; if(project.parts.none { it.id==selectedId }) selectedId=project.parts.lastOrNull()?.id; if(project.parameters.none { it.id==parameterId }) parameterId=project.parameters.firstOrNull()?.id }
 }

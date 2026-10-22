@@ -10,8 +10,9 @@ import java.util.zip.*
 object ProjectArchive {
     private const val MAX_TOTAL = 64 * 1024 * 1024
     private val json = Json { ignoreUnknownKeys = false; encodeDefaults = true }
-    data class Bundle(val project: Project, val images: Map<String,ByteArray>)
-    fun write(project: Project, images: Map<String,ByteArray>, output: OutputStream) {
+    data class Bundle(val project: Project, val images: Map<String,ByteArray>, val sourceVersion: Int = project.version)
+    fun write(source: Project, images: Map<String,ByteArray>, output: OutputStream) {
+        val project = ProjectMigration.upgrade(source)
         Validation.check(project)
         require(project.assets.all { images.containsKey(it.id) })
         require(images.values.sumOf { it.size.toLong() } <= MAX_TOTAL)
@@ -44,13 +45,14 @@ object ProjectArchive {
             }
         }
         val meta = entries.remove("project.json") ?: error("Missing project.json")
-        val project = json.decodeFromString<Project>(meta.toString(Charsets.UTF_8)); Validation.check(project)
+        val decoded = json.decodeFromString<Project>(meta.toString(Charsets.UTF_8))
+        val project = ProjectMigration.upgrade(decoded); Validation.check(project)
         require(entries.size == project.assets.size) { "Unexpected or missing assets" }
         val images = project.assets.associate { a ->
             val bytes = entries["assets/${a.id}.png"] ?: error("Missing image")
             require(isPng(bytes)) { "PNG required" }; a.id to bytes
         }
-        return Bundle(project,images)
+        return Bundle(project,images,decoded.version)
     }
     private fun isPng(b: ByteArray) = b.size >= 8 && b.take(8) == listOf(137,80,78,71,13,10,26,10).map { it.toByte() }
 }

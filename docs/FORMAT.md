@@ -1,23 +1,18 @@
-# .mylive2d v1
+# .mylive2d v2
 
-ZIP 루트:
+ZIP은 project.json과 assets/<asset-id>.png를 포함한다. JSON `format=MyLive2D`, `version=2`. 정확한 스키마 소스는 core/Model.kt와 Rigging.kt의 @Serializable 타입이다. ZIP 경로/용량/PNG 참조 검증은 ProjectArchive에서 수행한다.
 
-```
-project.json
-assets/<asset-id>.png
-```
+- Project: id, name, assets, parts, parameters, **deformers**
+- Part: id, name, assetId, mesh, transform, visible, locked, opacity, **parentId**
+- Mesh: vertices, uv, triangles (UV와 모든 키폼은 같은 정점 수)
+- Parameter: id, name, min/default/max/value, bindings, **deformerBindings**
+- Binding: partId, keys[{value,vertices}]
+- Deformer: id, name, kind(GROUP/ROTATION/WARP), parentId, transform, pivot, origin, width/height, columns/rows, controls, visible/locked
+- DeformerBinding: deformerId, keys[{value,pose}]
+- DeformerPose: transform(position, rotation, scale), controls
 
-JSON `format`은 `MyLive2D`, `version`은 `1`이다. 지원하지 않는 버전은 읽기를 거부한다. JSON 구조의 유일한 스키마 소스는 `core/Model.kt`의 @Serializable 타입이다. 향후 버전은 변환기를 명시적으로 추가하며 조용히 이전 형식으로 해석하지 않는다.
+parentId는 디포머 ID만 허용한다. parts 배열의 전역 뒤→앞 순서를 계층과 독립적으로 유지한다. 카메라/선택/미기록 초안/Undo는 파일에 넣지 않는다. 키폼 정점·제어점은 각 대상의 로컬 좌표이다. 피벗과 계층은 애니메이션되지 않는 공통 구조다.
 
-- Project: id, name, assets, parts, parameters
-- Asset: id, width, height
-- Part: id, name, assetId, mesh, transform, visible, locked, opacity
-- Mesh: vertices[{x,y}], uv[{x,y}], triangles[Int]
-- Transform: position{x,y}, rotation(도), scale(균일 배율)
-- Parameter: id, name, min, default, max, value, bindings
-- Binding: partId, keys
-- Keyform: value, vertices (해당 메쉬와 같은 길이)
+v1은 새 필드가 비어 있음을 확인하고 v2로 변환한다. v1 파일에 v2 리깅 데이터를 몰래 넣은 경우 거부한다. 미래 버전은 명시적 변환기 추가 전까지 거부한다. 새 파일은 항상 v2로 쓴다. Phase 1 앱은 v2를 지원하지 않는다.
 
-parts 배열은 뒤에서 앞으로 그린다. 각 키폼은 절대 로컬 정점 좌표다. 카메라·선택·초안·Undo 이력은 교환 포맷에 포함하지 않는다. `.mylive2d` 하나에 편집 복원에 필요한 이미지가 전부 포함된다. 숨김 파츠의 이미지도 보존한다.
-
-최대 33 ZIP entries, PNG 16 MiB/개, JSON 8 MiB, 해제 총합 64 MiB. ZIP의 경로는 정규화하여 허용하는 것이 아니라 허용 목록에 정확히 일치할 때만 읽는다. 외부 파일은 새로운 project/asset ID로 가져와 로컬 파일 덮어쓰기를 막는다.
+최대 33 entries, PNG16 MiB/개, JSON8 MiB, 해제 총64 MiB. 파츠64 / 디포머64 / 부모최대12 / 이미지32 / 메쉬1024정점·6144인덱스 / 파라미터32 / 바인딩별키폼32 상한과 전체 키폼8192 / 키폼 포함 정점·제어점100000 상한을 검사한다. 가져오기는 새 프로젝트/asset ID로 복사하고 리깅 노드 ID 참조는 그 프로젝트 안에서 보존한다.
