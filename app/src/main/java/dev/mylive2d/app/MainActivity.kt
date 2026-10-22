@@ -49,6 +49,8 @@ class MainActivity: ComponentActivity() {
     val density=LocalDensity.current.density
     var left by remember { mutableStateOf(false) }; var right by remember { mutableStateOf(true) }
     var projects by remember { mutableStateOf(false) }; var help by remember { mutableStateOf(false) }
+    var animationExportDialog by remember { mutableStateOf(false) }
+    var animationExportSize by remember { mutableIntStateOf(512) }
     var rename by remember { mutableStateOf(false) }; var create by remember { mutableStateOf(false) }
     var confirmDelete by remember { mutableStateOf<String?>(null) }
     val lifecycle=LocalLifecycleOwner.current.lifecycle
@@ -57,6 +59,7 @@ class MainActivity: ComponentActivity() {
     val png=rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { if(it.isNotEmpty()) vm.importPng(it) }
     val open=rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { it?.let(vm::importProject) }
     val export=rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/zip")) { it?.let(vm::export) }
+    val sequenceExport=rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/zip")) { it?.let { uri -> vm.exportAnimationSequence(uri,animationExportSize) } }
     LaunchedEffect(vm) { vm.messages.collect { snack.showSnackbar(it) } }
     DisposableEffect(lifecycle,surface) {
         val observer=LifecycleEventObserver { _,event -> when(event) {
@@ -71,7 +74,7 @@ class MainActivity: ComponentActivity() {
     Scaffold(snackbarHost={ SnackbarHost(snack) },modifier=Modifier.safeDrawingPadding()) { padding ->
         Column(Modifier.fillMaxSize().padding(padding)) {
             Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal=8.dp),verticalAlignment=Alignment.CenterVertically) {
-                TextButton(onClick={ projects=true },enabled=!vm.busy) { Text("☰") }
+                TextButton(onClick={ projects=true },enabled=!vm.busy,modifier=Modifier.testTag("projectMenu")) { Text("☰") }
                 Text(vm.project.name+if(vm.dirty) " *" else "",modifier=Modifier.widthIn(max=200.dp).clickable { rename=true }.testTag("projectName"),maxLines=1,overflow=TextOverflow.Ellipsis)
                 TextButton(onClick=vm::save,enabled=!vm.busy,modifier=Modifier.testTag("save")) { Text(vm.tr("저장","Save")) }
                 TextButton(onClick=vm::undo,enabled=vm.canUndo && !vm.busy) { Text(vm.tr("실행 취소","Undo")) }
@@ -124,6 +127,7 @@ class MainActivity: ComponentActivity() {
             Button(onClick={ projects=false; create=true },enabled=!vm.busy) { Text(vm.tr("새 프로젝트","New project")) }
             OutlinedButton(onClick={ projects=false; open.launch(arrayOf("application/zip","application/octet-stream","*/*")) },enabled=!vm.busy) { Text(vm.tr(".mylive2d 가져오기","Import .mylive2d")) }
             OutlinedButton(onClick={ projects=false; export.launch(vm.project.name.replace(Regex("[^\\p{L}\\p{N} _-]"),"_")+".mylive2d") },enabled=!vm.busy) { Text(vm.tr("프로젝트 내보내기","Export project")) }
+            OutlinedButton(onClick={ projects=false; animationExportDialog=true },enabled=!vm.busy && vm.selectedAnimation?.tracks?.any { it.keyframes.isNotEmpty() }==true,modifier=Modifier.testTag("exportAnimationSequence")) { Text(vm.tr("애니메이션 PNG 프레임 내보내기","Export animation PNG frames")) }
             Row { TextButton(onClick=vm::language) { Text(if(vm.english) "한국어" else "English") }; TextButton(onClick=vm::theme) { Text(vm.tr("테마 전환","Toggle theme")) } }
             Text(vm.tr("최근 프로젝트","Recent projects"),style=MaterialTheme.typography.titleSmall)
             vm.recent.forEach { item -> Row(verticalAlignment=Alignment.CenterVertically) {
@@ -132,6 +136,13 @@ class MainActivity: ComponentActivity() {
             } }
         }
     },confirmButton={ TextButton(onClick={ projects=false }) { Text(vm.tr("닫기","Close")) } })
+    if(animationExportDialog) AnimationExportDialog(vm,
+        onDismiss={ animationExportDialog=false },
+        onExport={ size -> animationExportSize=size; animationExportDialog=false
+            val clip=vm.selectedAnimation
+            val stem=(clip?.name ?: "animation").replace(Regex("[^\\p{L}\\p{N} _-]"),"_").trim().ifBlank { "animation" }
+            sequenceExport.launch("$stem-png-frames.zip")
+        })
     confirmDelete?.let { id -> AlertDialog(onDismissRequest={ confirmDelete=null },title={ Text(vm.tr("프로젝트 삭제?","Delete project?")) },text={ Text(vm.tr("이 기기의 프로젝트와 백업을 삭제합니다.","Deletes this local project and its backup.")) },confirmButton={ TextButton(onClick={ confirmDelete=null; vm.deleteRecent(id) }) { Text(vm.tr("삭제","Delete")) } },dismissButton={ TextButton(onClick={ confirmDelete=null }) { Text(vm.tr("취소","Cancel")) } }) }
     if(rename || create) NameDialog(vm,if(create) vm.tr("새 프로젝트","New project") else vm.tr("이름 변경","Rename"),if(create) "" else vm.project.name,onDismiss={ rename=false; create=false }) { name ->
         if(create) vm.newProject(name) else vm.rename(name); rename=false; create=false
@@ -140,6 +151,26 @@ class MainActivity: ComponentActivity() {
         "1. + PNG로 눈 이미지 두 개를 불러옵니다.\n2. 파츠를 선택해 드래그로 배치하고 속성에서 크기·회전을 조절합니다.\n3. 파라미터를 추가하고 선택한 눈에 ‘눈 개폐 키폼’을 만듭니다. 각 눈에 반복하세요.\n4. 슬라이더 최솟값은 닫힘, 최댓값은 열림입니다.\n5. 직접 수정하려면 값을 정한 뒤 ‘키폼 편집’ → 정점 드래그 → ‘키폼 기록’을 누릅니다.\n6. 저장 후 ☰에서 .mylive2d로 내보낼 수 있습니다.\n\n두 손가락: 확대·이동 / 빈 곳 드래그: 카메라 이동\n메쉬 재생성은 해당 파츠의 기존 키폼을 지웁니다.\n자동 저장은 약 0.8초 후 적용됩니다. 미기록 키폼 초안은 저장되지 않습니다.\n\nPhase 2: 파츠 패널에서 + 그룹/회전/워프로 선택 요소를 감쌉니다. 다른 요소는 속성의 부모 연결로 넣으세요. 워프 격자 제어점 또는 회전 끝점을 움직이고 키폼을 기록합니다. 정점 +/− 모드는 삼각형 내부/내부 정점을 탭합니다.",
         "1. Import two eye PNGs.\n2. Select and drag parts; adjust scale and rotation in Properties.\n3. Add a parameter, then create Eye blink keyforms for each eye.\n4. Minimum closes the eye; maximum opens it.\n5. For custom shapes: set a value → Edit keyform → drag vertices → Record keyform.\n6. Save, then export .mylive2d from ☰.\n\nTwo fingers: zoom/pan. Empty area: pan.\nRebuilding a mesh removes its keyforms.\nAutosave runs after about 0.8 seconds. Unrecorded keyform drafts are not saved.\n\nPhase 2: Parts panel → + Group/Rotate/Warp wraps the selection. Attach other elements via Parent in Properties. Drag warp controls or the rotation endpoint and record keyforms. Vertex +/− taps triangle interiors/interior vertices."
     )) },confirmButton={ TextButton(onClick={ help=false }) { Text(vm.tr("확인","OK")) } })
+}
+
+@Composable private fun AnimationExportDialog(vm: EditorViewModel,onDismiss: ()->Unit,onExport: (Int)->Unit) {
+    val clip=vm.selectedAnimation
+    var size by remember(clip?.id) { mutableIntStateOf(512) }
+    val hasKeys=clip?.tracks?.any { it.keyframes.isNotEmpty() }==true
+    val canExport=clip!=null && hasKeys && AnimationSequenceExporter.canExport(clip.durationFrames,size)
+    AlertDialog(onDismissRequest=onDismiss,title={ Text(vm.tr("애니메이션 내보내기","Export animation")) },text={
+        Column(Modifier.testTag("animationExportDialog"),verticalArrangement=Arrangement.spacedBy(8.dp)) {
+            Text(vm.tr("선택한 클립을 투명 PNG 프레임 ZIP으로 저장합니다.","Save the selected clip as a ZIP of transparent PNG frames."))
+            Row(Modifier.horizontalScroll(rememberScrollState()),horizontalArrangement=Arrangement.spacedBy(4.dp)) {
+                AnimationSequenceExporter.OUTPUT_SIZES.forEach { option ->
+                    FilterChip(selected=size==option,onClick={ size=option },label={ Text("${option}×$option") },modifier=Modifier.testTag("exportSize-$option"))
+                }
+            }
+            if(clip!=null) Text("${clip.durationFrames} ${vm.tr("프레임","frames")} · ${clip.fps} FPS · ${size}×$size")
+            Text(vm.tr("최대 300프레임, 전체 래스터 예산 128메가픽셀입니다.","Limit: 300 frames and 128 million rendered pixels total."),style=MaterialTheme.typography.labelSmall)
+            if(!canExport) Text(vm.tr("프레임 크기를 줄이거나 애니메이션 길이를 짧게 하세요.","Choose a smaller frame size or shorten the animation."),color=MaterialTheme.colorScheme.error,style=MaterialTheme.typography.bodySmall)
+        }
+    },confirmButton={ TextButton(onClick={ onExport(size) },enabled=canExport && !vm.busy,modifier=Modifier.testTag("startAnimationExport")) { Text(vm.tr("저장","Export")) } },dismissButton={ TextButton(onClick=onDismiss) { Text(vm.tr("취소","Cancel")) } })
 }
 
 private fun fit(vm: EditorViewModel,width: Float,height: Float,left: Float=0f,right: Float=0f) {

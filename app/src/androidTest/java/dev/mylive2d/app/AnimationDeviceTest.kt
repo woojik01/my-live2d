@@ -5,6 +5,8 @@ import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsEnabled
+import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import dev.mylive2d.core.AnimationEngine
 import dev.mylive2d.core.Project
@@ -73,6 +75,14 @@ class AnimationDeviceTest {
             }
             compose.waitUntil(10_000) { !vm.dirty }
             assertEquals(vm.project,repo.open(projectId!!))
+            compose.onNodeWithTag("projectMenu").performClick()
+            compose.onNodeWithTag("exportAnimationSequence").assertIsDisplayed().performClick()
+            compose.onNodeWithTag("animationExportDialog").assertIsDisplayed()
+            compose.onNodeWithTag("exportSize-512").assertIsDisplayed()
+            compose.onNodeWithTag("exportSize-1024").performClick()
+            compose.onNodeWithTag("startAnimationExport").assertIsNotEnabled()
+            compose.onNodeWithTag("exportSize-512").performClick()
+            compose.onNodeWithTag("startAnimationExport").assertIsEnabled()
         } finally {
             compose.activityRule.scenario.onActivity { vm.stopPlayback() }
             compose.activityRule.scenario.close()
