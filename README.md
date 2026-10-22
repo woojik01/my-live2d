@@ -1,8 +1,8 @@
-# My Live 2D — Phase 4 export preview
+# My Live 2D — Phase 4
 
 Android 스마트폰·태블릿용 독립 2D 캐릭터 모델 편집기. Kotlin + Jetpack Compose + OpenGL ES 2.0. 핵심 편집은 오프라인으로 동작하며 INTERNET 권한과 계정/서버를 사용하지 않습니다. 자체 `.mylive2d` ZIP/JSON/PNG 포맷을 사용하고 Cubism SDK·독점 소스·공식 파일 호환을 포함하지 않습니다.
 
-Phase 1~3 기능을 갖춘 Android 편집기에서 Phase 4 투명 PNG 애니메이션 프레임 ZIP 내보내기를 추가하고 있습니다. 검증 기록: [Phase 1](docs/VALIDATION.md), [Phase 2](docs/PHASE2_VALIDATION.md), [Phase 3](docs/PHASE3_VALIDATION.md), [Phase 4 내보내기](docs/PHASE4_EXPORT.md).
+Phase 1~3 기능을 갖춘 Android 편집기에서 Phase 4 투명 PNG 애니메이션 프레임 ZIP 내보내기와 알파 영역 자동 메쉬를 추가하고 있습니다. 검증 기록: [Phase 1](docs/VALIDATION.md), [Phase 2](docs/PHASE2_VALIDATION.md), [Phase 3](docs/PHASE3_VALIDATION.md), [Phase 4 내보내기](docs/PHASE4_EXPORT.md), [자동 메쉬](docs/PHASE4_MESH.md).
 
 ## 빌드 / 설치
 
@@ -14,7 +14,7 @@ Phase 1~3 기능을 갖춘 Android 편집기에서 Phase 4 투명 PNG 애니메�
 - APK: `app/build/outputs/apk/debug/app-debug.apk`
 - [Phase 3 Actions 실행 #26](https://github.com/woojik01/my-live2d/actions/runs/39769019566): `my-live2d-phase2-debug` 아티팩트(현재 CI 설정의 기존 이름, v0.3.0 소스에서 빌드됨)에서 `app-debug.apk`를 설치합니다. 테스트용 `app-debug-androidTest.apk`는 일반 설치 대상이 아닙니다.
 
-CI는 실행별 디버그 키를 사용합니다. 기존 버전을 삭제하기 전에 프로젝트를 `.mylive2d`로 내보내 보관하세요. v1 파일을 이 버전에서 가져올 수 있지만 새 v2 파일은 Phase 1 앱에서 열 수 없습니다.
+CI는 실행별 디버그 키를 사용합니다. 기존 버전을 삭제하기 전에 프로젝트를 `.mylive2d`로 내보내 보관하세요. v1/v2 파일을 이 버전에서 가져올 수 있지만 새 v3 파일은 이전 Phase 1/2 앱에서 열 수 없습니다.
 
 도구 버전은 재현성을 위해 Gradle 8.11.1 / AGP 8.9.2 / Kotlin 2.1.20 / Compose BOM 2025.04.01로 고정했습니다. 최신 버전이라는 의미가 아닙니다.
 
@@ -55,7 +55,8 @@ CI는 실행별 디버그 키를 사용합니다. 기존 버전을 삭제하기 
 
 ## 메쉬 토폴로지 / 조작
 
-- **메쉬 생성 / 재생성**: 1~24행/열의 규칙 격자. 해당 파츠 키폼을 초기화하며 Undo로 복구합니다.
+- **격자 메쉬 생성 / 재생성**: 1~24행/열의 규칙 격자. 해당 파츠 키폼을 초기화하며 Undo로 복구합니다.
+- **알파 영역 자동 메쉬**: 투명 여백과 빈 셀을 제외한 삼각형 격자. 긴 변 분할 수 4~24, 알파 기준 1~255, 여유 0~16픽셀. 원본 UV와 파츠 위치를 유지하며 해당 파츠 키폼을 초기화합니다. 곡선 윤곽의 정확한 추출은 아니며 작은 구멍/간격은 분할 수에 따라 메워질 수 있습니다. [사용법과 제한](docs/PHASE4_MESH.md).
 - **이동**: 메쉬 모드에서 정점을 드래그합니다. 키폼이 연결된 파츠는 키폼 편집에서 수정하세요.
 - **정점 +**: 삼각형 내부를 탭합니다. UV와 모든 관련 키폼도 함께 보간합니다. 모서리 바로 위의 추가는 거부합니다.
 - **정점 −**: 내부 정점을 탭합니다. 구멍을 재삼각분할하며 외곽 정점은 보호합니다. 접히거나 교차한 fan은 삭제를 거부합니다.
@@ -81,6 +82,6 @@ CI는 실행별 디버그 키를 사용합니다. 기존 버전을 삭제하기 
 
 ## 미구현 / 다음 단계
 
-Phase 4 진행 중: 투명 PNG 애니메이션 프레임 ZIP 내보내기 구현. 남은 작업은 알파 윤곽 자동 메쉬, GIF/영상 인코딩, 성능 계측/최적화, 태블릿·스타일러스 지원, PSD 조사입니다. 외곽 정점 삭제·수동 삼각형 연결·워프 해상도 UI·다차원 조합 보정 키폼·Cubism 호환·얼굴 추적·물리 연산은 지원하지 않습니다.
+Phase 4 진행 중: 투명 PNG 애니메이션 프레임 ZIP 내보내기와 알파 영역 자동 메쉬 구현. 남은 작업은 정교한 외곽선 메쉬, GIF/영상 인코딩, 성능 계측/최적화, 태블릿·스타일러스 지원, PSD 조사입니다. 외곽 정점 삭제·수동 삼각형 연결·워프 해상도 UI·다차원 조합 보정 키폼·Cubism 호환·얼굴 추적·물리 연산은 지원하지 않습니다.
 
 [리깅 설계](docs/RIGGING.md) · [포맷](docs/FORMAT.md) · [전체 구조](docs/ARCHITECTURE.md) · [개발 단계](docs/ROADMAP.md) · [라이선스 고지](NOTICE.md)

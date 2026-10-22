@@ -3,6 +3,14 @@ package dev.mylive2d.core
 import kotlin.math.abs
 
 object MeshTopology {
+    /** Rebuilding changes topology, so only this part's mesh keyforms are removed. */
+    fun replace(project: Project, partId: String, mesh: Mesh): Project {
+        require(project.parts.any { it.id == partId }) { "Part not found" }
+        val result = project.copy(parts = project.parts.map { if (it.id == partId) it.copy(mesh = mesh) else it },
+            parameters = project.parameters.map { parameter -> parameter.copy(bindings = parameter.bindings.filterNot { it.partId == partId }) })
+        Validation.check(result)
+        return result
+    }
     data class Hit(val triangle: Int, val weights: List<Float>)
     private fun cross(a: Vec2,b: Vec2,c: Vec2)=(b.x-a.x)*(c.y-a.y)-(b.y-a.y)*(c.x-a.x)
     fun hit(mesh: Mesh, points: List<Vec2>, point: Vec2): Hit? {
