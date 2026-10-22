@@ -50,11 +50,11 @@ fun newId(): String = UUID.randomUUID().toString()
     val deformerBindings: List<DeformerBinding> = emptyList()
 )
 @Serializable data class Project(
-    val format: String = "MyLive2D", val version: Int = 2, val id: String = newId(),
+    val format: String = "MyLive2D", val version: Int = 3, val id: String = newId(),
     val name: String = "새 프로젝트", val assets: List<Asset> = emptyList(),
     // First part is backmost. Order is identical in archives, evaluation and rendering.
     val parts: List<Part> = emptyList(), val parameters: List<Parameter> = emptyList(),
-    val deformers: List<Deformer> = emptyList()
+    val deformers: List<Deformer> = emptyList(), val animations: List<AnimationClip> = emptyList()
 )
 
 object ParameterEngine {
@@ -132,7 +132,7 @@ class History(initial: Project, private val limit: Int = 40) {
 
 object Validation {
     fun check(p: Project) {
-        require(p.format == "MyLive2D" && p.version == 2) { "Unsupported project format/version" }
+        require(p.format == "MyLive2D" && p.version == 3) { "Unsupported project format/version" }
         fun id(s: String) = s.matches(Regex("[A-Za-z0-9-]{1,80}"))
         require(id(p.id) && p.name.isNotBlank() && p.name.length <= 120)
         require(p.assets.size <= 32 && p.parts.size <= 64 && p.parameters.size <= 32)
@@ -167,5 +167,6 @@ object Validation {
                 }
             }
         }
+        AnimationEngine.validate(p)
     }
 }

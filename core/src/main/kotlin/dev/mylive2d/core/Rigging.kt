@@ -202,11 +202,16 @@ object RigValidation {
 
 object ProjectMigration {
     fun upgrade(p: Project): Project {
-        require(p.format=="MyLive2D" && p.version in 1..2) { "Unsupported project format/version" }
-        if(p.version==1) {
-            require(p.deformers.isEmpty() && p.parts.all { it.parentId==null } && p.parameters.all { it.deformerBindings.isEmpty() }) { "Version 1 cannot contain version 2 rigging" }
-            return p.copy(version=2)
+        require(p.format=="MyLive2D" && p.version in 1..3) { "Unsupported project format/version" }
+        var current = p
+        if(current.version==1) {
+            require(current.deformers.isEmpty() && current.parts.all { it.parentId==null } && current.parameters.all { it.deformerBindings.isEmpty() } && current.animations.isEmpty()) { "Version 1 cannot contain newer rigging or animation data" }
+            current = current.copy(version=2)
         }
-        return p
+        if(current.version==2) {
+            require(current.animations.isEmpty()) { "Version 2 cannot contain animation data" }
+            current = current.copy(version=3)
+        }
+        return current
     }
 }

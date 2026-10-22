@@ -27,6 +27,13 @@ class EditorViewModel(app: Application): AndroidViewModel(app) {
     var deformerDraft by mutableStateOf<DeformerPose?>(null); private set
     var parameterId by mutableStateOf<String?>(null)
     var keyEditing by mutableStateOf(false); private set
+    var selectedAnimationId by mutableStateOf<String?>(null); private set
+    var selectedTrackParameterId by mutableStateOf<String?>(null); private set
+    var selectedAnimationKeyId by mutableStateOf<String?>(null); private set
+    var animationFrame by mutableIntStateOf(0); private set
+    var animationPreview by mutableStateOf(true); private set
+    var playing by mutableStateOf(false); private set
+    private var playbackJob: Job? = null
     var draft by mutableStateOf<List<Vec2>?>(null); private set
     var meshMode by mutableStateOf(false)
     var precise by mutableStateOf(false)
@@ -49,16 +56,19 @@ class EditorViewModel(app: Application): AndroidViewModel(app) {
     val selectedDeformer get() = project.deformers.firstOrNull { it.id==selectedDeformerId }
     val selectedLocked get() = selected?.let { RigEvaluator(project).locked(it) } ?: selectedDeformer?.let { RigEvaluator(project).locked(it) } ?: true
     val renderProject: Project get() {
-        val parameter=parameterId ?: return project
-        if(!keyEditing) return project
-        selected?.let { part -> draft?.let { return ParameterEngine.record(project,parameter,part.id,it) } }
-        selectedDeformer?.let { node -> deformerDraft?.let { return Rigging.record(project,parameter,node.id,it) } }
-        return project
+        val parameter=parameterId
+        if(keyEditing && parameter!=null) {
+            selected?.let { part -> draft?.let { return ParameterEngine.record(project,parameter,part.id,it) } }
+            selectedDeformer?.let { node -> deformerDraft?.let { return Rigging.record(project,parameter,node.id,it) } }
+        }
+        return selectedAnimation?.takeIf { animationPreview || playing }?.let { AnimationEngine.evaluate(project,it.id,animationFrame.toFloat()) } ?: project
     }
     val hasDeformerKeys get() = selectedDeformerId?.let { id -> project.parameters.any { p -> p.deformerBindings.any { it.deformerId==id } } } ?: false
     fun keyValues(p: Parameter): List<Float> = selectedId?.let { id -> p.bindings.firstOrNull { it.partId==id }?.keys?.map { it.value } }
         ?: selectedDeformerId?.let { id -> p.deformerBindings.firstOrNull { it.deformerId==id }?.keys?.map { it.value } } ?: emptyList()
     val parameter get() = project.parameters.firstOrNull { it.id == parameterId }
+    val selectedAnimation get() = project.animations.firstOrNull { it.id == selectedAnimationId }
+    val selectedTrack get() = selectedAnimation?.tracks?.firstOrNull { it.parameterId == selectedTrackParameterId }
     init {
         viewModelScope.launch {
             try {
@@ -77,6 +87,7 @@ class EditorViewModel(app: Application): AndroidViewModel(app) {
     private fun refreshRecent() { recent = repository.recent() }
     private fun adoptProject(p: Project) {
         project = p; history = History(p); selectedId = p.parts.lastOrNull()?.id; parameterId = p.parameters.firstOrNull()?.id
+        stopPlayback(); selectedAnimationId=p.animations.firstOrNull()?.id; selectedTrackParameterId=p.animations.firstOrNull()?.tracks?.firstOrNull()?.parameterId ?: p.parameters.firstOrNull()?.id; selectedAnimationKeyId=null; animationFrame=0; animationPreview=true
         keyEditing = false; draft = null; deformerDraft=null; selectedDeformerId=null; selectedVertex=-1; gestureStart = null; camera = Camera(); dirty = false; revision++; syncHistory()
         repository.active = p.id
     }
@@ -170,11 +181,123 @@ class EditorViewModel(app: Application): AndroidViewModel(app) {
         val param = Parameter(name=name.trim().take(120),min=min,default=default,max=max)
         change(project.copy(parameters=project.parameters+param)); selectParameter(param.id)
     }
+    fun addAnimation() = editSafely {
+        stopPlayback(); require(project.animations.size < AnimationEngine.MAX_CLIPS) { "Maximum ${AnimationEngine.MAX_CLIPS} clips" }
+        val clip=AnimationClip(name=tr("애니메이션 ${project.animations.size+1}","Animation ${project.animations.size+1}"))
+        change(project.copy(animations=project.animations+clip)); selectAnimation(clip.id)
+    }
+    fun addBlinkExample() = addExampleAnimation(
+        tr("눈 깜빡임","Eye blink"),tr("눈 개폐","Eye open"),1f,30,listOf(0 to 1f,8 to 0f,15 to 1f)
+    )
+    fun addBreathExample() = addExampleAnimation(
+        tr("호흡","Breathing"),tr("호흡","Breath"),0f,120,listOf(0 to 0f,30 to .5f,60 to 1f,90 to .5f,119 to 0f)
+    )
+    private fun addExampleAnimation(title: String,parameterName: String,default: Float,duration: Int,keys: List<Pair<Int,Float>>) = editSafely {
+        stopPlayback(); require(project.animations.size < AnimationEngine.MAX_CLIPS) { "Maximum ${AnimationEngine.MAX_CLIPS} clips" }
+        val existing=project.parameters.firstOrNull { it.name==parameterName || it.name==if(english) (if(parameterName=="Eye open") "눈 개폐" else "호흡") else (if(parameterName=="눈 개폐") "Eye open" else "Breath") }
+        val parameter=existing ?: run {
+            require(project.parameters.size < 32) { "Parameter limit reached" }
+            Parameter(name=parameterName,min=0f,default=default,max=1f).also { newParameter ->
+                change(project.copy(parameters=project.parameters+newParameter))
+            }
+        }
+        require(parameter.min<=0f && parameter.max>=1f) { tr("예제에는 0~1 범위 파라미터가 필요합니다","Example requires a parameter with a 0–1 range") }
+        var clip=AnimationClip(name=title,durationFrames=duration,fps=30,loop=true)
+        keys.forEach { (frame,value) -> clip=AnimationEngine.putKey(clip,parameter.id,frame,value) }
+        change(project.copy(animations=project.animations+clip)); parameterId=parameter.id; selectAnimation(clip.id)
+    }
+    fun selectAnimation(id: String?) {
+        stopPlayback(); selectedAnimationId=project.animations.firstOrNull { it.id==id }?.id
+        selectedTrackParameterId=selectedAnimation?.tracks?.firstOrNull()?.parameterId ?: project.parameters.firstOrNull()?.id
+        selectedAnimationKeyId=null; animationFrame=0; animationPreview=true
+    }
+    fun toggleAnimationPreview() { if(!playing) animationPreview=!animationPreview }
+    fun renameAnimation(id: String,name: String) {
+        if(name.isNotBlank()) change(project.copy(animations=project.animations.map { if(it.id==id) it.copy(name=name.trim().take(120)) else it }))
+    }
+    fun deleteAnimation() {
+        val id=selectedAnimationId ?: return; stopPlayback()
+        change(project.copy(animations=project.animations.filterNot { it.id==id }))
+        selectAnimation(project.animations.firstOrNull()?.id)
+    }
+    fun addAnimationTrack(parameterId: String) = editSafely {
+        val clip=selectedAnimation ?: return@editSafely
+        require(project.parameters.any { it.id==parameterId })
+        if(clip.tracks.any { it.parameterId==parameterId }) { selectedTrackParameterId=parameterId; return@editSafely }
+        require(clip.tracks.size < AnimationEngine.MAX_TRACKS_PER_CLIP) { "Track limit reached" }
+        change(project.copy(animations=project.animations.map { if(it.id==clip.id) it.copy(tracks=it.tracks+ParameterTrack(parameterId=parameterId)) else it }))
+        selectedTrackParameterId=parameterId; selectedAnimationKeyId=null
+    }
+    fun selectAnimationTrack(parameterId: String) { selectedTrackParameterId=parameterId; selectedAnimationKeyId=null }
+    fun seekAnimation(frame: Int) { selectedAnimation?.let { animationFrame=frame.coerceIn(0,it.durationFrames-1) } }
+    fun scrubAnimation(frame: Int) { stopPlayback(); seekAnimation(frame) }
+    fun setAnimationDuration(frames: Int) = editSafely {
+        val clip=selectedAnimation ?: return@editSafely
+        require(frames in 1..AnimationEngine.MAX_DURATION_FRAMES)
+        require(clip.tracks.all { track -> track.keyframes.all { it.frame < frames } }) { tr("현재 키폼이 있는 프레임보다 긴 길이를 지정하세요","Duration must include every existing keyframe") }
+        stopPlayback(); change(project.copy(animations=project.animations.map { if(it.id==clip.id) it.copy(durationFrames=frames) else it })); seekAnimation(animationFrame)
+    }
+    fun setAnimationFps(fps: Int) = editSafely {
+        val clip=selectedAnimation ?: return@editSafely; require(fps in 1..120)
+        stopPlayback(); change(project.copy(animations=project.animations.map { if(it.id==clip.id) it.copy(fps=fps) else it }))
+    }
+    fun setAnimationLoop(loop: Boolean) {
+        val clip=selectedAnimation ?: return; stopPlayback()
+        change(project.copy(animations=project.animations.map { if(it.id==clip.id) it.copy(loop=loop) else it }))
+    }
+    fun recordAnimationKey() = editSafely {
+        val clip=selectedAnimation ?: return@editSafely
+        val parameterId=selectedTrackParameterId ?: return@editSafely
+        val parameter=renderProject.parameters.firstOrNull { it.id==parameterId } ?: return@editSafely
+        val next=AnimationEngine.putKey(clip,parameterId,animationFrame,parameter.value)
+        change(project.copy(animations=project.animations.map { if(it.id==clip.id) next else it }))
+        selectedAnimationKeyId=next.tracks.first { it.parameterId==parameterId }.keyframes.first { it.frame==animationFrame }.id
+    }
+    fun selectAnimationKey(id: String?) { selectedAnimationKeyId=selectedTrack?.keyframes?.firstOrNull { it.id==id }?.id }
+    fun moveSelectedAnimationKey(frame: Int) = editSafely {
+        val clip=selectedAnimation ?: return@editSafely; val track=selectedTrack ?: return@editSafely
+        val key=track.keyframes.firstOrNull { it.id==selectedAnimationKeyId } ?: return@editSafely
+        val next=AnimationEngine.moveKey(clip,track.id,key.id,frame)
+        change(project.copy(animations=project.animations.map { if(it.id==clip.id) next else it })); seekAnimation(frame)
+    }
+    fun deleteSelectedAnimationKey() = editSafely {
+        val clip=selectedAnimation ?: return@editSafely; val track=selectedTrack ?: return@editSafely
+        val key=track.keyframes.firstOrNull { it.id==selectedAnimationKeyId } ?: return@editSafely
+        val next=AnimationEngine.removeKey(clip,track.id,key.id)
+        change(project.copy(animations=project.animations.map { if(it.id==clip.id) next else it })); selectedAnimationKeyId=null
+    }
+    fun setSelectedKeyInterpolation(mode: Interpolation) = editSafely {
+        val clip=selectedAnimation ?: return@editSafely; val track=selectedTrack ?: return@editSafely
+        val key=track.keyframes.firstOrNull { it.id==selectedAnimationKeyId } ?: return@editSafely
+        val next=clip.copy(tracks=clip.tracks.map { t -> if(t.id!=track.id) t else t.copy(keyframes=t.keyframes.map { if(it.id==key.id) it.copy(interpolation=mode) else it }) })
+        change(project.copy(animations=project.animations.map { if(it.id==clip.id) next else it }))
+    }
+    fun togglePlayback() {
+        if(playing) { stopPlayback(); return }
+        val clip=selectedAnimation ?: return
+        if(clip.tracks.none { it.keyframes.isNotEmpty() }) { message(tr("재생할 키프레임을 먼저 기록하세요","Record at least one keyframe before playback")); return }
+        cancelKey(); if(animationFrame>=clip.durationFrames-1) animationFrame=0
+        val startedAt=System.nanoTime(); val startFrame=animationFrame; playing=true; animationPreview=true
+        playbackJob=viewModelScope.launch {
+            while(isActive && selectedAnimationId==clip.id) {
+                val elapsed=(System.nanoTime()-startedAt)/1_000_000_000.0
+                val position=startFrame+elapsed*clip.fps
+                if(!clip.loop && position>=clip.durationFrames-1) {
+                    animationFrame=clip.durationFrames-1; playing=false; playbackJob=null; break
+                }
+                val wrapped=if(clip.loop) position%clip.durationFrames else position
+                animationFrame=wrapped.toInt().coerceIn(0,clip.durationFrames-1)
+                delay(16)
+            }
+        }
+    }
+    fun stopPlayback() { playing=false; playbackJob?.cancel(); playbackJob=null }
+    override fun onCleared() { stopPlayback(); super.onCleared() }
     fun parameterValue(id: String, value: Float) {
         if(keyEditing) return
         change(project.copy(parameters=project.parameters.map { if(it.id==id) it.copy(value=value.coerceIn(it.min,it.max)) else it }))
     }
-    fun deleteParameter() { val id=parameterId ?: return; cancelKey(); change(project.copy(parameters=project.parameters.filter { it.id!=id })); parameterId=project.parameters.firstOrNull()?.id }
+    fun deleteParameter() { val id=parameterId ?: return; cancelKey(); change(project.copy(parameters=project.parameters.filter { it.id!=id },animations=project.animations.map { clip -> clip.copy(tracks=clip.tracks.filterNot { it.parameterId==id }) })); parameterId=project.parameters.firstOrNull()?.id; if(selectedTrackParameterId==id) { selectedTrackParameterId=parameterId; selectedAnimationKeyId=null } }
     fun blink() {
         val part = selected ?: return; val p = parameter ?: return; if(selectedLocked) return
         cancelKey(); change(ParameterEngine.blink(project,p.id,part.id)); message(tr("최솟값=닫힘 · 최댓값=열림 키폼 생성","Min=closed · max=open keyforms created"))

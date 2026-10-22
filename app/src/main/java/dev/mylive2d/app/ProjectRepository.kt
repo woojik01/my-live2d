@@ -47,8 +47,8 @@ class ProjectRepository(private val context: Context) {
         var recovered = false
         val bundle = try { file.inputStream().use { ProjectArchive.read(it) } }
         catch (e: Exception) { if(backup.exists()) { recovered = true; backup.inputStream().use { ProjectArchive.read(it) } } else throw e }
-        if(bundle.sourceVersion==1) {
-            val legacy=File(projects,"$id.v1copy")
+        if(bundle.sourceVersion in 1..2) {
+            val legacy=File(projects,"$id.v${bundle.sourceVersion}copy")
             if(!legacy.exists()) Files.copy((if(recovered) backup else file).toPath(),legacy.toPath())
         }
         val p = install(bundle)
@@ -57,7 +57,8 @@ class ProjectRepository(private val context: Context) {
     }
     suspend fun delete(id: String) = mutex.withLock {
         require(id.matches(Regex("[A-Za-z0-9-]{1,80}")))
-        File(projects,"$id.mylive2d").delete(); File(projects,"$id.bak").delete(); File(projects,"$id.v1copy").delete()
+        File(projects,"$id.mylive2d").delete(); File(projects,"$id.bak").delete()
+        (1..2).forEach { File(projects,"$id.v${it}copy").delete() }
         prefs.edit().remove("name-$id").apply()
     }
     suspend fun importProject(uri: Uri): Project = mutex.withLock {

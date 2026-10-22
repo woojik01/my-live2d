@@ -61,7 +61,7 @@ class MainActivity: ComponentActivity() {
     DisposableEffect(lifecycle,surface) {
         val observer=LifecycleEventObserver { _,event -> when(event) {
             Lifecycle.Event.ON_RESUME -> { surface.onResume(); surface.update() }
-            Lifecycle.Event.ON_PAUSE -> surface.onPause()
+            Lifecycle.Event.ON_PAUSE -> { vm.stopPlayback(); surface.onPause() }
             Lifecycle.Event.ON_STOP -> vm.save()
             else -> Unit
         } }
@@ -76,6 +76,7 @@ class MainActivity: ComponentActivity() {
                 TextButton(onClick=vm::save,enabled=!vm.busy,modifier=Modifier.testTag("save")) { Text(vm.tr("저장","Save")) }
                 TextButton(onClick=vm::undo,enabled=vm.canUndo && !vm.busy) { Text(vm.tr("실행 취소","Undo")) }
                 TextButton(onClick=vm::redo,enabled=vm.canRedo && !vm.busy) { Text(vm.tr("다시 실행","Redo")) }
+                vm.selectedAnimation?.let { Text("${vm.animationFrame}f ${if(vm.animationPreview) "▶" else "✎"}",style=MaterialTheme.typography.labelMedium) }
                 TextButton(onClick={ help=true }) { Text("?") }
             }
             HorizontalDivider()
@@ -110,6 +111,7 @@ class MainActivity: ComponentActivity() {
                 TextButton(onClick={ vm.snap=!vm.snap }) { Text(vm.tr("스냅","Snap")+if(vm.snap) " ✓" else "") }
                 TextButton(onClick={ vm.background=(vm.background+1)%3 }) { Text(vm.tr("배경","Background")) }
             }
+            AnimationTimeline(vm)
             if(vm.keyEditing) Row(Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.secondaryContainer),verticalAlignment=Alignment.CenterVertically) {
                 Text(vm.tr("키폼 편집 중","Editing keyform"),Modifier.weight(1f).padding(8.dp))
                 TextButton(onClick=vm::commitKey) { Text(vm.tr("키폼 기록","Record keyform")) }
