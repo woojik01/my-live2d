@@ -54,9 +54,11 @@ private enum class CompactEditorPanel { LAYERS, PROPERTIES }
 @Composable private fun EditorScreen(vm: EditorViewModel) {
     val snack=remember { SnackbarHostState() }
     val screenDp=LocalConfiguration.current.screenWidthDp
+    val screenHeightDp=LocalConfiguration.current.screenHeightDp
     val dualPaneScreen=screenDp>=1100
     val sidePropertiesScreen=screenDp>=700
-    var left by remember { mutableStateOf(true) }; var right by remember { mutableStateOf(true) }
+    var left by remember(dualPaneScreen) { mutableStateOf(dualPaneScreen) }
+    var right by remember(dualPaneScreen) { mutableStateOf(dualPaneScreen) }
     var compactPanel by remember { mutableStateOf<CompactEditorPanel?>(null) }
     var toolsExpanded by remember { mutableStateOf(false) }
     var projects by remember { mutableStateOf(false) }; var help by remember { mutableStateOf(false) }
@@ -72,7 +74,6 @@ private enum class CompactEditorPanel { LAYERS, PROPERTIES }
     val export=rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/zip")) { it?.let(vm::export) }
     val sequenceExport=rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/zip")) { it?.let { uri -> vm.exportAnimationSequence(uri,animationExportSize) } }
     LaunchedEffect(vm) { vm.messages.collect { snack.showSnackbar(it) } }
-    LaunchedEffect(compactPanel,screenDp) { android.util.Log.e("MyLive2D-QA","compactPanel=$compactPanel width=$screenDp") }
     LaunchedEffect(sidePropertiesScreen) { if(sidePropertiesScreen) compactPanel=null }
     BackHandler(enabled=compactPanel!=null) { compactPanel=null }
     DisposableEffect(lifecycle,surface) {
@@ -124,10 +125,7 @@ private enum class CompactEditorPanel { LAYERS, PROPERTIES }
             HorizontalDivider()
             Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal=8.dp),verticalAlignment=Alignment.CenterVertically) {
                 TextButton(onClick={ if(dualPaneScreen) left=!left else compactPanel=CompactEditorPanel.LAYERS },modifier=Modifier.testTag("panelParts")) { Text(vm.tr("파츠","Parts")) }
-                TextButton(onClick={
-                    android.util.Log.e("MyLive2D-QA","panelProperties clicked width=$screenDp side=$sidePropertiesScreen")
-                    if(sidePropertiesScreen) right=!right else compactPanel=CompactEditorPanel.PROPERTIES
-                },modifier=Modifier.testTag("panelProperties")) { Text(vm.tr("속성","Properties")) }
+                TextButton(onClick={ if(sidePropertiesScreen) right=!right else compactPanel=CompactEditorPanel.PROPERTIES },modifier=Modifier.testTag("panelProperties")) { Text(vm.tr("속성","Properties")) }
                 TextButton(onClick={ png.launch(arrayOf("image/png")) },enabled=!vm.busy,modifier=Modifier.testTag("importPng")) { Text("+ PNG") }
                 FilterChip(selected=vm.meshMode,onClick={ vm.meshMode=!vm.meshMode },label={ Text(if(vm.selectedDeformer?.kind==DeformerKind.WARP) vm.tr("격자","Grid edit") else vm.tr("메쉬","Mesh")) })
                 Box {
@@ -146,7 +144,7 @@ private enum class CompactEditorPanel { LAYERS, PROPERTIES }
         val title=if(panel==CompactEditorPanel.LAYERS) vm.tr("파츠 및 디포머","Parts and deformers") else vm.tr("속성 및 파라미터","Properties and parameters")
             Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha=.48f)).testTag("compactEditorSheet"),contentAlignment=Alignment.BottomCenter) {
                 Surface(
-                    Modifier.fillMaxWidth().fillMaxHeight(.86f),
+                    Modifier.fillMaxWidth().fillMaxHeight(if(screenHeightDp<500) .86f else .66f),
                     shape=RoundedCornerShape(topStart=24.dp,topEnd=24.dp),tonalElevation=12.dp
                 ) {
                     Column(Modifier.fillMaxSize().testTag("compactEditorSheetContent")) {
