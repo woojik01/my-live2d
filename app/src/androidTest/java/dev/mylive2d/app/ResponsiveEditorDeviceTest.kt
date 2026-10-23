@@ -26,11 +26,14 @@ class ResponsiveEditorDeviceTest {
         assertTrue("Canvas should use nearly the full width when no panel is open",canvasWidth>=screenWidth*.88f)
 
         compose.onNodeWithTag("panelProperties").performClick()
+        compose.mainClock.advanceTimeBy(1_000)
         compose.onNodeWithTag("compactEditorSheetContent").assertIsDisplayed()
         compose.onNodeWithTag("closeCompactPanel").performClick()
+        compose.mainClock.advanceTimeBy(1_000)
         assertEquals(0,compose.onAllNodesWithTag("compactEditorSheetContent").fetchSemanticsNodes().size)
 
         compose.onNodeWithTag("panelParts").performClick()
+        compose.mainClock.advanceTimeBy(1_000)
         compose.onNodeWithTag("compactEditorSheetContent").assertIsDisplayed()
     }
 }
