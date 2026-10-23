@@ -36,7 +36,7 @@ class AlphaMeshDeviceTest {
             ready()
             compose.activityRule.scenario.onActivity { vm.newProject("Alpha mesh QA") }; ready()
             compose.activityRule.scenario.onActivity { vm.importPng(listOf(Uri.fromFile(image))) }; ready()
-            compose.onNodeWithTag("panelProperties").performTouchInput { click() }
+            compose.onNodeWithTag("panelProperties").performSemanticsAction(androidx.compose.ui.semantics.SemanticsActions.OnClick) { it() }
             compose.mainClock.advanceTimeBy(1_000)
             compose.waitUntil(10_000) {
                 compose.onAllNodesWithTag("compactEditorSheetContent").fetchSemanticsNodes().isNotEmpty() ||
