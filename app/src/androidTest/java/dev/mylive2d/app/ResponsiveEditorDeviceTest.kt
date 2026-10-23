@@ -7,6 +7,7 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performTouchInput
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -27,7 +28,7 @@ class ResponsiveEditorDeviceTest {
         val canvasWidth=compose.onNodeWithTag("modelCanvas").fetchSemanticsNode().boundsInRoot.width
         assertTrue("Canvas should use nearly the full width when no panel is open",canvasWidth>=screenWidth*.88f)
 
-        compose.onNodeWithTag("panelProperties").performClick()
+        compose.onNodeWithTag("panelProperties").performTouchInput { click() }
         compose.mainClock.advanceTimeBy(1_000)
         val sheet=compose.onNodeWithTag("compactEditorSheet").fetchSemanticsNode().boundsInRoot
         val content=compose.onNodeWithTag("compactEditorSheetContent").fetchSemanticsNode().boundsInRoot
