@@ -6,14 +6,17 @@ import androidx.activity.compose.setContent
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.*
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
@@ -24,6 +27,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -135,20 +140,30 @@ private enum class CompactEditorPanel { LAYERS, PROPERTIES }
     }
     compactPanel?.let { panel ->
         val title=if(panel==CompactEditorPanel.LAYERS) vm.tr("파츠 및 디포머","Parts and deformers") else vm.tr("속성 및 파라미터","Properties and parameters")
-        ModalBottomSheet(
-            onDismissRequest={ compactPanel=null },
-            sheetState=rememberModalBottomSheetState(skipPartiallyExpanded=true),
-            modifier=Modifier.testTag("compactEditorSheet"),
-            dragHandle={ BottomSheetDefaults.DragHandle() }
-        ) {
-            Column(Modifier.fillMaxWidth().fillMaxHeight(.82f).testTag("compactEditorSheetContent")) {
-                Row(Modifier.fillMaxWidth().heightIn(min=48.dp).padding(start=16.dp,end=4.dp),verticalAlignment=Alignment.CenterVertically) {
-                    Text(title,Modifier.weight(1f),style=MaterialTheme.typography.titleMedium,maxLines=1,overflow=TextOverflow.Ellipsis)
-                    EditorIconButton(vm.tr("닫기","Close"),"×",true,"closeCompactPanel") { compactPanel=null }
-                }
-                HorizontalDivider()
-                Box(Modifier.weight(1f).fillMaxWidth()) {
-                    if(panel==CompactEditorPanel.LAYERS) Layers(vm) else Properties(vm)
+        Dialog(onDismissRequest={ compactPanel=null },properties=DialogProperties(usePlatformDefaultWidth=false)) {
+            Box(Modifier.fillMaxSize(),contentAlignment=Alignment.BottomCenter) {
+                Surface(
+                    Modifier.fillMaxWidth().fillMaxHeight(.86f).testTag("compactEditorSheet"),
+                    shape=RoundedCornerShape(topStart=24.dp,topEnd=24.dp),tonalElevation=12.dp
+                ) {
+                    Column(Modifier.fillMaxSize().testTag("compactEditorSheetContent")) {
+                        Box(Modifier.fillMaxWidth().height(28.dp).pointerInput(panel) {
+                            var downward=0f
+                            detectVerticalDragGestures(
+                                onVerticalDrag={ _,amount -> downward+=amount },
+                                onDragEnd={ if(downward>72.dp.toPx()) compactPanel=null; downward=0f },
+                                onDragCancel={ downward=0f }
+                            )
+                        },contentAlignment=Alignment.Center) { BottomSheetDefaults.DragHandle() }
+                        Row(Modifier.fillMaxWidth().heightIn(min=48.dp).padding(start=16.dp,end=4.dp),verticalAlignment=Alignment.CenterVertically) {
+                            Text(title,Modifier.weight(1f),style=MaterialTheme.typography.titleMedium,maxLines=1,overflow=TextOverflow.Ellipsis)
+                            EditorIconButton(vm.tr("닫기","Close"),"×",true,"closeCompactPanel") { compactPanel=null }
+                        }
+                        HorizontalDivider()
+                        Box(Modifier.weight(1f).fillMaxWidth()) {
+                            if(panel==CompactEditorPanel.LAYERS) Layers(vm) else Properties(vm)
+                        }
+                    }
                 }
             }
         }
