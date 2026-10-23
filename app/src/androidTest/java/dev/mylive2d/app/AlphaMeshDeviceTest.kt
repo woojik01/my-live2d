@@ -36,12 +36,20 @@ class AlphaMeshDeviceTest {
             ready()
             compose.activityRule.scenario.onActivity { vm.newProject("Alpha mesh QA") }; ready()
             compose.activityRule.scenario.onActivity { vm.importPng(listOf(Uri.fromFile(image))) }; ready()
+            compose.onNodeWithTag("panelProperties").performSemanticsAction(androidx.compose.ui.semantics.SemanticsActions.OnClick) { it() }
+            compose.mainClock.advanceTimeBy(1_000)
+            compose.waitUntil(10_000) { compose.onAllNodesWithTag("autoAlphaMesh").fetchSemanticsNodes().isNotEmpty() }
             var original: Project?=null
             compose.activityRule.scenario.onActivity {
                 projectId=vm.project.id
                 vm.addParameter("Eye",0f,1f,1f); vm.blink(); original=vm.project
             }
-            compose.onNodeWithTag("autoAlphaMesh").performScrollTo().performClick()
+            compose.waitUntil(10_000) {
+                compose.onAllNodesWithTag("autoAlphaMesh").fetchSemanticsNodes().isNotEmpty()
+            }
+            compose.onNodeWithTag("autoAlphaMesh").performScrollTo()
+                .performSemanticsAction(androidx.compose.ui.semantics.SemanticsActions.OnClick) { it() }
+            compose.waitUntil(10_000) { compose.onAllNodesWithTag("alphaThreshold").fetchSemanticsNodes().isNotEmpty() }
             compose.onNodeWithTag("alphaThreshold").performScrollTo().performTextReplacement("0")
             compose.onNodeWithTag("buildAlphaMesh").assertIsNotEnabled()
             compose.onNodeWithTag("alphaThreshold").performTextReplacement("1")

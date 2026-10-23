@@ -1,0 +1,40 @@
+package dev.mylive2d.app
+
+import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.onAllNodesWithTag
+import androidx.compose.ui.test.performSemanticsAction
+import androidx.compose.ui.semantics.SemanticsActions
+import androidx.test.ext.junit.runners.AndroidJUnit4
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
+import org.junit.Assume.assumeTrue
+import org.junit.Rule
+import org.junit.Test
+import org.junit.runner.RunWith
+
+@RunWith(AndroidJUnit4::class)
+class ResponsiveEditorDeviceTest {
+    @get:Rule val compose=createAndroidComposeRule<MainActivity>()
+
+    @Test fun compactLayoutKeepsCanvasWideAndShowsPanelsOnDemand() {
+        assumeTrue("Compact layout check is for phone and narrow-window widths",compose.activity.resources.configuration.screenWidthDp<700)
+
+        assertEquals(0,compose.onAllNodesWithTag("compactEditorSheetContent").fetchSemanticsNodes().size)
+        val screenWidth=compose.activity.window.decorView.width.toFloat()
+        val canvasWidth=compose.onNodeWithTag("modelCanvas").fetchSemanticsNode().boundsInRoot.width
+        assertTrue("Canvas should use nearly the full width when no panel is open",canvasWidth>=screenWidth*.88f)
+
+        compose.onNodeWithTag("panelProperties").assertIsDisplayed().performSemanticsAction(SemanticsActions.OnClick) { it() }
+        compose.mainClock.advanceTimeBy(1_000)
+        compose.onNodeWithTag("compactEditorSheetContent").assertIsDisplayed()
+        compose.onNodeWithTag("closeCompactPanel").performSemanticsAction(SemanticsActions.OnClick) { it() }
+        compose.mainClock.advanceTimeBy(1_000)
+        assertEquals(0,compose.onAllNodesWithTag("compactEditorSheetContent").fetchSemanticsNodes().size)
+
+        compose.onNodeWithTag("panelParts").performSemanticsAction(SemanticsActions.OnClick) { it() }
+        compose.mainClock.advanceTimeBy(1_000)
+        compose.onNodeWithTag("compactEditorSheetContent").assertIsDisplayed()
+    }
+}
