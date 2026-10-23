@@ -30,7 +30,8 @@ class ResponsiveEditorDeviceTest {
         assertTrue("Canvas should use nearly the full width when no panel is open",canvasWidth>=screenWidth*.88f)
 
         val propertiesButton=compose.onNodeWithTag("panelProperties").fetchSemanticsNode()
-        Log.e("MyLive2D-QA","propertiesButton=${propertiesButton.boundsInRoot} root=${compose.onRoot().fetchSemanticsNode().boundsInRoot} config=${propertiesButton.config}")
+        val canvasBounds=compose.onNodeWithTag("modelCanvas").fetchSemanticsNode().boundsInRoot
+        Log.e("MyLive2D-QA","propertiesButton=${propertiesButton.boundsInRoot} canvas=$canvasBounds root=${compose.onRoot().fetchSemanticsNode().boundsInRoot} config=${propertiesButton.config}")
         compose.onNodeWithTag("panelProperties").assertIsDisplayed().performTouchInput { click() }
         compose.mainClock.advanceTimeBy(1_000)
         val sheet=compose.onNodeWithTag("compactEditorSheet").fetchSemanticsNode().boundsInRoot
