@@ -37,6 +37,7 @@ class AlphaMeshDeviceTest {
             compose.activityRule.scenario.onActivity { vm.newProject("Alpha mesh QA") }; ready()
             compose.activityRule.scenario.onActivity { vm.importPng(listOf(Uri.fromFile(image))) }; ready()
             compose.onNodeWithTag("panelProperties").performClick()
+            compose.mainClock.advanceTimeBy(1_000)
             compose.waitUntil(10_000) {
                 compose.onAllNodesWithTag("compactEditorSheetContent").fetchSemanticsNodes().isNotEmpty() ||
                     compose.onAllNodesWithTag("autoAlphaMesh").fetchSemanticsNodes().isNotEmpty()
