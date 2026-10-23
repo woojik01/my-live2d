@@ -123,7 +123,10 @@ private enum class CompactEditorPanel { LAYERS, PROPERTIES }
             HorizontalDivider()
             Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal=8.dp),verticalAlignment=Alignment.CenterVertically) {
                 TextButton(onClick={ if(dualPaneScreen) left=!left else compactPanel=CompactEditorPanel.LAYERS },modifier=Modifier.testTag("panelParts")) { Text(vm.tr("파츠","Parts")) }
-                TextButton(onClick={ if(sidePropertiesScreen) right=!right else compactPanel=CompactEditorPanel.PROPERTIES },modifier=Modifier.testTag("panelProperties")) { Text(vm.tr("속성","Properties")) }
+                TextButton(onClick={
+                    android.util.Log.i("MyLive2D-QA","panelProperties clicked width=$screenDp side=$sidePropertiesScreen")
+                    if(sidePropertiesScreen) right=!right else compactPanel=CompactEditorPanel.PROPERTIES
+                },modifier=Modifier.testTag("panelProperties")) { Text(vm.tr("속성","Properties")) }
                 TextButton(onClick={ png.launch(arrayOf("image/png")) },enabled=!vm.busy,modifier=Modifier.testTag("importPng")) { Text("+ PNG") }
                 FilterChip(selected=vm.meshMode,onClick={ vm.meshMode=!vm.meshMode },label={ Text(if(vm.selectedDeformer?.kind==DeformerKind.WARP) vm.tr("격자","Grid edit") else vm.tr("메쉬","Mesh")) })
                 Box {
@@ -140,9 +143,9 @@ private enum class CompactEditorPanel { LAYERS, PROPERTIES }
         }
         compactPanel?.let { panel ->
         val title=if(panel==CompactEditorPanel.LAYERS) vm.tr("파츠 및 디포머","Parts and deformers") else vm.tr("속성 및 파라미터","Properties and parameters")
-            Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha=.48f)).testTag("compactEditorSheetBackdrop"),contentAlignment=Alignment.BottomCenter) {
+            Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha=.48f)).testTag("compactEditorSheet"),contentAlignment=Alignment.BottomCenter) {
                 Surface(
-                    Modifier.fillMaxWidth().fillMaxHeight(.86f).testTag("compactEditorSheet"),
+                    Modifier.fillMaxWidth().fillMaxHeight(.86f),
                     shape=RoundedCornerShape(topStart=24.dp,topEnd=24.dp),tonalElevation=12.dp
                 ) {
                     Column(Modifier.fillMaxSize().testTag("compactEditorSheetContent")) {
