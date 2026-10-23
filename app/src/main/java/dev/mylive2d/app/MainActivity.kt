@@ -1,6 +1,7 @@
 package dev.mylive2d.app
 
 import android.os.Bundle
+import androidx.activity.compose.BackHandler
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -27,8 +28,6 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
-import androidx.compose.ui.window.Dialog
-import androidx.compose.ui.window.DialogProperties
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -74,6 +73,7 @@ private enum class CompactEditorPanel { LAYERS, PROPERTIES }
     val sequenceExport=rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/zip")) { it?.let { uri -> vm.exportAnimationSequence(uri,animationExportSize) } }
     LaunchedEffect(vm) { vm.messages.collect { snack.showSnackbar(it) } }
     LaunchedEffect(sidePropertiesScreen) { if(sidePropertiesScreen) compactPanel=null }
+    BackHandler(enabled=compactPanel!=null) { compactPanel=null }
     DisposableEffect(lifecycle,surface) {
         val observer=LifecycleEventObserver { _,event -> when(event) {
             Lifecycle.Event.ON_RESUME -> { surface.onResume(); surface.update() }
@@ -95,7 +95,8 @@ private enum class CompactEditorPanel { LAYERS, PROPERTIES }
                 }
             }
         },modifier=Modifier.safeDrawingPadding()) { padding ->
-        Column(Modifier.fillMaxSize().padding(padding)) {
+        Box(Modifier.fillMaxSize().padding(padding)) {
+        Column(Modifier.fillMaxSize()) {
             Row(Modifier.fillMaxWidth().heightIn(min=56.dp).padding(horizontal=4.dp),verticalAlignment=Alignment.CenterVertically) {
                 EditorIconButton(vm.tr("프로젝트 메뉴","Project menu"),"☰",!vm.busy,"projectMenu") { projects=true }
                 Text(vm.project.name+if(vm.dirty) " *" else "",modifier=Modifier.weight(1f).clickable { rename=true }.testTag("projectName"),maxLines=1,overflow=TextOverflow.Ellipsis,style=MaterialTheme.typography.titleMedium)
@@ -137,11 +138,9 @@ private enum class CompactEditorPanel { LAYERS, PROPERTIES }
                 }
             }
         }
-    }
-    compactPanel?.let { panel ->
+        compactPanel?.let { panel ->
         val title=if(panel==CompactEditorPanel.LAYERS) vm.tr("파츠 및 디포머","Parts and deformers") else vm.tr("속성 및 파라미터","Properties and parameters")
-        Dialog(onDismissRequest={ compactPanel=null },properties=DialogProperties(usePlatformDefaultWidth=false)) {
-            Box(Modifier.fillMaxSize(),contentAlignment=Alignment.BottomCenter) {
+            Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha=.48f)).testTag("compactEditorSheetBackdrop"),contentAlignment=Alignment.BottomCenter) {
                 Surface(
                     Modifier.fillMaxWidth().fillMaxHeight(.86f).testTag("compactEditorSheet"),
                     shape=RoundedCornerShape(topStart=24.dp,topEnd=24.dp),tonalElevation=12.dp
@@ -166,6 +165,7 @@ private enum class CompactEditorPanel { LAYERS, PROPERTIES }
                     }
                 }
             }
+        }
         }
     }
     if(projects) AlertDialog(onDismissRequest={ projects=false },title={ Text("My Live 2D") },text={
