@@ -1,12 +1,9 @@
 package dev.mylive2d.app
 
-import android.util.Log
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onAllNodesWithTag
-import androidx.compose.ui.test.onRoot
-import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -29,21 +26,14 @@ class ResponsiveEditorDeviceTest {
         val canvasWidth=compose.onNodeWithTag("modelCanvas").fetchSemanticsNode().boundsInRoot.width
         assertTrue("Canvas should use nearly the full width when no panel is open",canvasWidth>=screenWidth*.88f)
 
-        val propertiesButton=compose.onNodeWithTag("panelProperties").fetchSemanticsNode()
-        val canvasBounds=compose.onNodeWithTag("modelCanvas").fetchSemanticsNode().boundsInRoot
-        Log.e("MyLive2D-QA","propertiesButton=${propertiesButton.boundsInRoot} canvas=$canvasBounds root=${compose.onRoot().fetchSemanticsNode().boundsInRoot} config=${propertiesButton.config}")
         compose.onNodeWithTag("panelProperties").assertIsDisplayed().performSemanticsAction(SemanticsActions.OnClick) { it() }
         compose.mainClock.advanceTimeBy(1_000)
-        val sheet=compose.onNodeWithTag("compactEditorSheet").fetchSemanticsNode().boundsInRoot
-        val content=compose.onNodeWithTag("compactEditorSheetContent").fetchSemanticsNode().boundsInRoot
-        val root=compose.onRoot().fetchSemanticsNode().boundsInRoot
-        Log.i("MyLive2D-QA","sheet=$sheet content=$content root=$root window=${compose.activity.window.decorView.width}x${compose.activity.window.decorView.height}")
         compose.onNodeWithTag("compactEditorSheetContent").assertIsDisplayed()
-        compose.onNodeWithTag("closeCompactPanel").performClick()
+        compose.onNodeWithTag("closeCompactPanel").performSemanticsAction(SemanticsActions.OnClick) { it() }
         compose.mainClock.advanceTimeBy(1_000)
         assertEquals(0,compose.onAllNodesWithTag("compactEditorSheetContent").fetchSemanticsNodes().size)
 
-        compose.onNodeWithTag("panelParts").performClick()
+        compose.onNodeWithTag("panelParts").performSemanticsAction(SemanticsActions.OnClick) { it() }
         compose.mainClock.advanceTimeBy(1_000)
         compose.onNodeWithTag("compactEditorSheetContent").assertIsDisplayed()
     }
