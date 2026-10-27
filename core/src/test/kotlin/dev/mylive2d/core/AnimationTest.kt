@@ -65,7 +65,7 @@ class AnimationTest {
         assertEquals(0f, AnimationEngine.evaluate(saved, shut.id, 0f).parameters.single().value)
     }
 
-    @Test fun versionTwoArchivesUpgradeToVersionThreeAndRoundTrip() {
+    @Test fun versionTwoArchivesUpgradeToCurrentAndRoundTrip() {
         val (base, parameter) = fixture()
         val clip = AnimationEngine.putKey(AnimationClip(name = "Breath", durationFrames = 90, fps = 30), parameter.id, 0, 0f)
         val legacy = base.copy(version = 2)
@@ -74,13 +74,13 @@ class AnimationTest {
         ZipOutputStream(archive).use { zip -> zip.putNextEntry(ZipEntry("project.json")); zip.write(legacyJson.toByteArray()); zip.closeEntry() }
         val legacyBundle = ProjectArchive.read(ByteArrayInputStream(archive.toByteArray()))
         assertEquals(2, legacyBundle.sourceVersion)
-        assertEquals(3, legacyBundle.project.version)
+        assertEquals(4, legacyBundle.project.version)
         val migrated = legacyBundle.project
         val animated = migrated.copy(animations = listOf(clip))
         val bytes = ByteArrayOutputStream()
         ProjectArchive.write(animated, emptyMap(), bytes)
         val bundle = ProjectArchive.read(ByteArrayInputStream(bytes.toByteArray()))
-        assertEquals(3, bundle.sourceVersion)
+        assertEquals(4, bundle.sourceVersion)
         assertEquals(animated, bundle.project)
         assertEquals(0f, AnimationEngine.evaluate(bundle.project, clip.id, 0f).parameters.single().value)
     }
@@ -89,7 +89,7 @@ class AnimationTest {
         val (project, parameter) = fixture()
         val clip = AnimationEngine.putKey(AnimationClip(name = "Bad", durationFrames = 10), parameter.id, 0, .5f)
         assertFails { ProjectMigration.upgrade(project.copy(version = 2, animations = listOf(clip))) }
-        assertFails { ProjectMigration.upgrade(project.copy(version = 4)) }
+        assertFails { ProjectMigration.upgrade(project.copy(version = 5)) }
     }
 
     @Test fun malformedTracksAndKeyframesAreRejected() {

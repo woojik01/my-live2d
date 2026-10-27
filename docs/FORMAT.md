@@ -1,6 +1,6 @@
-# .mylive2d v3
+# .mylive2d v4
 
-ZIP은 project.json과 assets/<asset-id>.png를 포함한다. JSON `format=MyLive2D`, `version=3`. 정확한 스키마 소스는 core/Model.kt, Rigging.kt, Animation.kt의 @Serializable 타입이다. ZIP 경로/용량/PNG 참조 검증은 ProjectArchive에서 수행한다.
+ZIP은 project.json과 assets/<asset-id>.png를 포함한다. JSON `format=MyLive2D`, `version=4`. 정확한 스키마 소스는 core/Model.kt, Rigging.kt, Animation.kt의 @Serializable 타입이다. ZIP 경로/용량/PNG 참조 검증은 ProjectArchive에서 수행한다.
 
 - Project: id, name, assets, parts, parameters, **deformers**
 - Part: id, name, assetId, mesh, transform, visible, locked, opacity, **parentId**
@@ -19,3 +19,10 @@ parentId는 디포머 ID만 허용한다. parts 배열의 전역 뒤→앞 순�
 v1은 v2 리깅 필드가 비어 있는지 확인하고 v2를 거친 뒤 v3으로 변환한다. v2는 애니메이션 필드가 비어 있는지 확인하고 v3으로 변환한다. 내부 저장소에서 처음 연 v1/v2 원본 바이트는 각각 `.v1copy`/`.v2copy`로 보존한다. 잘못된 이전 버전 필드나 미래 버전은 추측하지 않고 거부한다. 새 파일은 항상 v3으로 쓴다. Phase 1/2 앱은 v3을 지원하지 않는다.
 
 최대 33 entries, PNG16 MiB/개, JSON8 MiB, 해제 총64 MiB. 파츠64 / 디포머64 / 부모최대12 / 이미지32 / 메쉬1024정점·6144인덱스 / 파라미터32 / 바인딩별키폼32 상한과 전체 리깅 키폼8192 / 키폼 포함 정점·제어점100000 상한을 검사한다. 애니메이션은 클립16 / 클립당 트랙32 / 트랙별 키1024 / 전체 키8192 / 클립 길이36,000프레임 / 1~120 FPS로 제한한다. 프레임은 클립 길이 안에 있어야 하며 트랙은 존재하는 파라미터를 참조하고 키 값은 그 파라미터 범위 안에 있어야 한다. 가져오기는 새 프로젝트/asset ID로 복사하고 리깅 노드 ID 참조는 그 프로젝트 안에서 보존한다.
+
+
+## v4 조합 보정
+
+`combinations`는 대상 파츠/디포머 ID, 두 파라미터 ID, 각 축의 최소·기본·최대값(중복 제거), 모든 축 교차점의 보정을 저장한다. 파츠는 로컬 정점 변위, 워프는 제어점 변위, 디포머는 위치/각도 변위와 배율 비율을 저장한다. 1차원 변형에 더하고 배율은 곱한다. 그리드 사이를 쌍선형 보간한다. 다른 파라미터의 결과를 키에 굽지 않는다. 조합을 삭제하거나 메쉬를 재생성할 때 데이터가 삭제되며 Undo로 복원할 수 있다. 정점 삽입·삭제는 모든 조합에도 전파한다. 검증은 전체 교차점, 대상/축 참조, 중복 쌍, 유한 좌표, 전체 예산을 검사한다.
+
+v1~v3 원본은 v4로 변환하며 내부 저장 원본을 버전별로 보존한다. 이전 버전 문서에 v4 조합이 들어 있으면 거부한다. v4는 이전 앱에서 열 수 없다.

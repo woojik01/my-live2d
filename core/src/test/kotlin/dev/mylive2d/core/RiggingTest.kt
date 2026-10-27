@@ -138,7 +138,7 @@ class RiggingTest {
             zip.putNextEntry(ZipEntry("assets/${old.assets.single().id}.png")); zip.write(png); zip.closeEntry()
         }
         val bundle=ProjectArchive.read(ByteArrayInputStream(bytes.toByteArray()))
-        assertEquals(1,bundle.sourceVersion); assertEquals(old.copy(version=3),bundle.project)
+        assertEquals(1,bundle.sourceVersion); assertEquals(old.copy(version=4),bundle.project)
         assertFails { ProjectMigration.upgrade(old.copy(deformers=listOf(Deformer(name="illegal")))) }
     }
     @Test fun invalidGridAndDeformerKeysRejected() {

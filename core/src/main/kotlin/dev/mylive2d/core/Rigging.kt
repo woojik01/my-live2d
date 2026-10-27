@@ -50,6 +50,11 @@ object Rigging {
             scale *= pose.transform.scale/base.transform.scale
             controls=controls.indices.map { controls[it]+(pose.controls[it]-base.controls[it]) }
         } }
+        project.combinations.filter { it.targetId==node.id }.forEach { combo ->
+            val correction=CombinationEngine.sample(project,combo)
+            position += correction.position; rotation += correction.rotation; scale *= correction.scale
+            controls=controls.indices.map { controls[it]+correction.points[it] }
+        }
         return DeformerPose(Transform(position,rotation,scale.coerceIn(.01f,100f)),controls)
     }
     fun record(project: Project, parameterId: String, nodeId: String, pose: DeformerPose): Project {
@@ -60,6 +65,28 @@ object Rigging {
             val updated=(keys.filter { abs(it.value-p.value)>.00001f }+DeformerKeyform(p.value,pose)).sortedBy { it.value }
             p.copy(deformerBindings=p.deformerBindings.filter { it.deformerId!=nodeId }+DeformerBinding(nodeId,updated))
         } })
+    }
+    /** Resample the deformation field in every key; changes of grid spacing can approximate the old shape. */
+    fun resizeWarp(project: Project, nodeId: String, columns: Int, rows: Int): Project {
+        require(columns in 1..8 && rows in 1..8)
+        val node=project.deformers.first { it.id==nodeId }
+        require(node.kind==DeformerKind.WARP)
+        if(node.columns==columns && node.rows==rows) return project
+        val resized=node.copy(columns=columns,rows=rows)
+        val newRest=resized.restControls()
+        fun resample(points: List<Vec2>)=newRest.map { RigEvaluator.warp(node,points,it) }
+        val newNode=resized.copy(controls=resample(node.controls))
+        val oldRest=node.restControls()
+        val result=project.copy(deformers=project.deformers.map { if(it.id==nodeId) newNode else it },
+            parameters=project.parameters.map { p -> p.copy(deformerBindings=p.deformerBindings.map { b ->
+                if(b.deformerId!=nodeId) b else b.copy(keys=b.keys.map { key -> key.copy(pose=key.pose.copy(controls=resample(key.pose.controls))) })
+            }) },
+            combinations=project.combinations.map { b -> if(b.targetId!=nodeId) b else b.copy(keys=b.keys.map { key ->
+                val absolute=oldRest.indices.map { oldRest[it]+key.points[it] }
+                val sampled=resample(absolute)
+                key.copy(points=newRest.indices.map { sampled[it]-newRest[it] })
+            }) })
+        Validation.check(result); return result
     }
     /** Reparenting preserves local coordinates. Wrapping an element in an identity node preserves its world pose. */
     fun reparent(project: Project, id: String, parentId: String?): Project {
@@ -83,7 +110,8 @@ object Rigging {
         val parts=project.parts.filter { it.id !in removedParts }
         return project.copy(deformers=project.deformers.filter { it.id !in nodes },parts=parts,
             assets=project.assets.filter { a -> parts.any { it.assetId==a.id } },
-            parameters=project.parameters.map { p -> p.copy(bindings=p.bindings.filter { it.partId !in removedParts },deformerBindings=p.deformerBindings.filter { it.deformerId !in nodes }) })
+            parameters=project.parameters.map { p -> p.copy(bindings=p.bindings.filter { it.partId !in removedParts },deformerBindings=p.deformerBindings.filter { it.deformerId !in nodes }) },
+            combinations=project.combinations.filter { it.targetId !in nodes && it.targetId !in removedParts })
     }
 }
 
@@ -182,9 +210,9 @@ object RigValidation {
             require(if(d.kind==DeformerKind.WARP) d.controls.size==(d.columns+1)*(d.rows+1) else d.controls.isEmpty())
             require(d.controls.all { it.finite() })
         }
-        val keyCount=p.parameters.sumOf { parameter -> parameter.bindings.sumOf { it.keys.size }+parameter.deformerBindings.sumOf { it.keys.size } }
+        val keyCount=p.parameters.sumOf { parameter -> parameter.bindings.sumOf { it.keys.size }+parameter.deformerBindings.sumOf { it.keys.size } }+p.combinations.sumOf { it.keys.size }
         val pointCount=p.parts.sumOf { it.mesh.vertices.size }+p.deformers.sumOf { it.controls.size }+
-            p.parameters.sumOf { parameter -> parameter.bindings.sumOf { b -> b.keys.sumOf { it.vertices.size } }+parameter.deformerBindings.sumOf { b -> b.keys.sumOf { it.pose.controls.size } } }
+            p.parameters.sumOf { parameter -> parameter.bindings.sumOf { b -> b.keys.sumOf { it.vertices.size } }+parameter.deformerBindings.sumOf { b -> b.keys.sumOf { it.pose.controls.size } } }+p.combinations.sumOf { b -> b.keys.sumOf { it.points.size } }
         require(keyCount<=8192 && pointCount<=100_000) { "Rig memory budget exceeded (8192 keyforms / 100000 points including keyforms)" }
         p.parameters.forEach { parameter ->
             require(parameter.deformerBindings.size<=p.deformers.size && parameter.deformerBindings.map { it.deformerId }.distinct().size==parameter.deformerBindings.size)
@@ -202,7 +230,8 @@ object RigValidation {
 
 object ProjectMigration {
     fun upgrade(p: Project): Project {
-        require(p.format=="MyLive2D" && p.version in 1..3) { "Unsupported project format/version" }
+        require(p.format=="MyLive2D" && p.version in 1..4) { "Unsupported project format/version" }
+        if(p.version < 4) require(p.combinations.isEmpty()) { "Legacy projects cannot contain combination data" }
         var current = p
         if(current.version==1) {
             require(current.deformers.isEmpty() && current.parts.all { it.parentId==null } && current.parameters.all { it.deformerBindings.isEmpty() } && current.animations.isEmpty()) { "Version 1 cannot contain newer rigging or animation data" }
@@ -212,6 +241,7 @@ object ProjectMigration {
             require(current.animations.isEmpty()) { "Version 2 cannot contain animation data" }
             current = current.copy(version=3)
         }
+        if(current.version==3) current=current.copy(version=4)
         return current
     }
 }

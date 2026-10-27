@@ -27,6 +27,7 @@ class EditorViewModel(app: Application): AndroidViewModel(app) {
     var deformerDraft by mutableStateOf<DeformerPose?>(null); private set
     var parameterId by mutableStateOf<String?>(null)
     var keyEditing by mutableStateOf(false); private set
+    var editingCombinationId by mutableStateOf<String?>(null); private set
     var selectedAnimationId by mutableStateOf<String?>(null); private set
     var selectedTrackParameterId by mutableStateOf<String?>(null); private set
     var selectedAnimationKeyId by mutableStateOf<String?>(null); private set
@@ -57,13 +58,20 @@ class EditorViewModel(app: Application): AndroidViewModel(app) {
     val selectedLocked get() = selected?.let { RigEvaluator(project).locked(it) } ?: selectedDeformer?.let { RigEvaluator(project).locked(it) } ?: true
     val renderProject: Project get() {
         val parameter=parameterId
+        if(keyEditing && editingCombinationId!=null) {
+            val combo=project.combinations.firstOrNull { it.id==editingCombinationId }
+            if(combo!=null) {
+                selected?.let { part -> draft?.let { return CombinationEngine.recordPart(project,combo,part,it) } }
+                selectedDeformer?.let { node -> deformerDraft?.let { return CombinationEngine.recordDeformer(project,combo,node,it) } }
+            }
+        }
         if(keyEditing && parameter!=null) {
             selected?.let { part -> draft?.let { return ParameterEngine.record(project,parameter,part.id,it) } }
             selectedDeformer?.let { node -> deformerDraft?.let { return Rigging.record(project,parameter,node.id,it) } }
         }
         return selectedAnimation?.takeIf { animationPreview || playing }?.let { AnimationEngine.evaluate(project,it.id,animationFrame.toFloat()) } ?: project
     }
-    val hasDeformerKeys get() = selectedDeformerId?.let { id -> project.parameters.any { p -> p.deformerBindings.any { it.deformerId==id } } } ?: false
+    val hasDeformerKeys get() = selectedDeformerId?.let { id -> project.parameters.any { p -> p.deformerBindings.any { it.deformerId==id } } || project.combinations.any { it.targetId==id } } ?: false
     fun keyValues(p: Parameter): List<Float> = selectedId?.let { id -> p.bindings.firstOrNull { it.partId==id }?.keys?.map { it.value } }
         ?: selectedDeformerId?.let { id -> p.deformerBindings.firstOrNull { it.deformerId==id }?.keys?.map { it.value } } ?: emptyList()
     val parameter get() = project.parameters.firstOrNull { it.id == parameterId }
@@ -88,7 +96,7 @@ class EditorViewModel(app: Application): AndroidViewModel(app) {
     private fun adoptProject(p: Project) {
         project = p; history = History(p); selectedId = p.parts.lastOrNull()?.id; parameterId = p.parameters.firstOrNull()?.id
         stopPlayback(); selectedAnimationId=p.animations.firstOrNull()?.id; selectedTrackParameterId=p.animations.firstOrNull()?.tracks?.firstOrNull()?.parameterId ?: p.parameters.firstOrNull()?.id; selectedAnimationKeyId=null; animationFrame=0; animationPreview=true
-        keyEditing = false; draft = null; deformerDraft=null; selectedDeformerId=null; selectedVertex=-1; gestureStart = null; camera = Camera(); dirty = false; revision++; syncHistory()
+        keyEditing = false; editingCombinationId=null; draft = null; deformerDraft=null; selectedDeformerId=null; selectedVertex=-1; gestureStart = null; camera = Camera(); dirty = false; revision++; syncHistory()
         repository.active = p.id
     }
     private fun syncHistory() { canUndo = history.canUndo; canRedo = history.canRedo }
@@ -168,12 +176,12 @@ class EditorViewModel(app: Application): AndroidViewModel(app) {
     fun duplicate() { selected?.let { p -> if(project.parts.size < 64) {
         val copy = p.copy(id=newId(),name=(p.name+tr(" 복사"," copy")).take(120),transform=p.transform.copy(position=p.transform.position+Vec2(24f,24f)))
         val params = project.parameters.map { param -> param.copy(bindings=param.bindings+param.bindings.filter { it.partId==p.id }.map { it.copy(partId=copy.id) }) }
-        change(project.copy(parts=project.parts+copy,parameters=params)); select(copy.id)
+        change(project.copy(parts=project.parts+copy,parameters=params,combinations=project.combinations+project.combinations.filter { it.targetId==p.id }.map { it.copy(id=newId(),targetId=copy.id) })); if(project.parts.any { it.id==copy.id }) select(copy.id)
     } } }
     fun deletePart() {
         val id = selectedId ?: return
         val parts = project.parts.filter { it.id != id }
-        change(project.copy(parts=parts,assets=project.assets.filter { a -> parts.any { it.assetId==a.id } },parameters=project.parameters.map { it.copy(bindings=it.bindings.filter { b -> b.partId!=id }) }))
+        change(project.copy(parts=parts,assets=project.assets.filter { a -> parts.any { it.assetId==a.id } },parameters=project.parameters.map { it.copy(bindings=it.bindings.filter { b -> b.partId!=id }) },combinations=project.combinations.filterNot { it.targetId==id }))
         select(parts.lastOrNull()?.id)
     }
     fun generateMesh(columns: Int, rows: Int) = editSafely {
@@ -207,6 +215,24 @@ class EditorViewModel(app: Application): AndroidViewModel(app) {
         if(project.parameters.size >= 32) return
         val param = Parameter(name=name.trim().take(120),min=min,default=default,max=max)
         change(project.copy(parameters=project.parameters+param)); selectParameter(param.id)
+    }
+    fun addRigPresets() = editSafely {
+        if(busy || keyEditing || playing) return@editSafely
+        val presets=listOf(
+            Triple("얼굴 X","Face X",true), Triple("얼굴 Y","Face Y",true), Triple("얼굴 Z","Face Z",true),
+            Triple("몸통 X","Body X",true), Triple("몸통 Y","Body Y",true), Triple("몸통 Z","Body Z",true),
+            Triple("왼쪽 눈 개폐","Left eye open",false), Triple("오른쪽 눈 개폐","Right eye open",false),
+            Triple("입 개폐","Mouth open",false), Triple("호흡","Breath",false)
+        )
+        val missing=presets.filter { (ko,en,_) -> project.parameters.none { it.name==ko || it.name==en } }
+        require(project.parameters.size+missing.size<=32) { tr("파라미터 수 제한을 초과합니다","Parameter limit exceeded") }
+        val added=missing.map { (ko,en,angle) ->
+            if(angle) Parameter(name=tr(ko,en),min=-30f,default=0f,max=30f)
+            else Parameter(name=tr(ko,en),min=0f,default=if(ko.contains("눈")) 1f else 0f,max=1f)
+        }
+        change(project.copy(parameters=project.parameters+added))
+        if(parameterId==null) parameterId=added.firstOrNull()?.id
+        message(tr("기본 리깅 파라미터 추가: ","Rig parameters added: ")+added.size)
     }
     fun addAnimation() = editSafely {
         stopPlayback(); cancelKey(); require(project.animations.size < AnimationEngine.MAX_CLIPS) { "Maximum ${AnimationEngine.MAX_CLIPS} clips" }
@@ -322,13 +348,49 @@ class EditorViewModel(app: Application): AndroidViewModel(app) {
     fun stopPlayback() { playing=false; playbackJob?.cancel(); playbackJob=null }
     override fun onCleared() { stopPlayback(); super.onCleared() }
     fun parameterValue(id: String, value: Float) {
-        if(keyEditing) return
+        if(keyEditing || playing) return
+        animationPreview=false
         change(project.copy(parameters=project.parameters.map { if(it.id==id) it.copy(value=value.coerceIn(it.min,it.max)) else it }))
     }
-    fun deleteParameter() { val id=parameterId ?: return; cancelKey(); change(project.copy(parameters=project.parameters.filter { it.id!=id },animations=project.animations.map { clip -> clip.copy(tracks=clip.tracks.filterNot { it.parameterId==id }) })); parameterId=project.parameters.firstOrNull()?.id; if(selectedTrackParameterId==id) { selectedTrackParameterId=parameterId; selectedAnimationKeyId=null } }
+    fun deleteParameter() { val id=parameterId ?: return; cancelKey(); change(project.copy(parameters=project.parameters.filter { it.id!=id },animations=project.animations.map { clip -> clip.copy(tracks=clip.tracks.filterNot { it.parameterId==id }) },combinations=project.combinations.filterNot { it.xParameterId==id || it.yParameterId==id })); parameterId=project.parameters.firstOrNull()?.id; if(selectedTrackParameterId==id) { selectedTrackParameterId=parameterId; selectedAnimationKeyId=null } }
     fun blink() {
         val part = selected ?: return; val p = parameter ?: return; if(selectedLocked) return
         cancelKey(); change(ParameterEngine.blink(project,p.id,part.id)); message(tr("최솟값=닫힘 · 최댓값=열림 키폼 생성","Min=closed · max=open keyforms created"))
+    }
+    val selectedCombinations get() = project.combinations.filter { it.targetId==(selectedId ?: selectedDeformerId) }
+    fun createCombination(secondId: String) = editSafely {
+        if(busy || keyEditing || playing || selectedLocked) return@editSafely
+        val first=parameterId ?: return@editSafely
+        val target=selectedId ?: selectedDeformerId ?: return@editSafely
+        change(CombinationEngine.create(project,target,first,secondId))
+        message(tr("조합 보정 생성: 교차점을 선택해 편집하세요","Combination created: select an intersection to edit"))
+    }
+    fun selectCombinationKey(id: String, x: Float, y: Float) = editSafely {
+        if(busy || keyEditing || playing) return@editSafely
+        val combo=project.combinations.first { it.id==id }
+        animationPreview=false
+        require(x in combo.xValues && y in combo.yValues)
+        change(project.copy(parameters=project.parameters.map { p -> when(p.id) {
+            combo.xParameterId -> p.copy(value=x)
+            combo.yParameterId -> p.copy(value=y)
+            else -> p
+        } }))
+    }
+    fun startCombinationKey(id: String) = editSafely {
+        if(busy || keyEditing || playing || selectedLocked) return@editSafely
+        stopPlayback()
+        val combo=project.combinations.first { it.id==id }
+        require(combo.targetId==(selectedId ?: selectedDeformerId))
+        require(CombinationEngine.isKey(project,combo)) { tr("먼저 격자의 교차점을 선택하세요","Select a grid intersection first") }
+        val part=selected; val node=selectedDeformer
+        if(part!=null) { draft=CombinationEngine.partDraft(project,combo,part); meshMode=true; meshTool=0 }
+        else if(node!=null) { deformerDraft=CombinationEngine.deformerDraft(project,combo,node); if(node.kind==DeformerKind.WARP) meshMode=true }
+        else return@editSafely
+        editingCombinationId=id; keyEditing=true
+    }
+    fun removeCombination(id: String) {
+        if(busy || keyEditing || playing || selectedLocked) return
+        change(project.copy(combinations=project.combinations.filterNot { it.id==id }))
     }
     fun startKey() {
         stopPlayback(); val param=parameter ?: return; if(selectedLocked) return
@@ -338,15 +400,22 @@ class EditorViewModel(app: Application): AndroidViewModel(app) {
         else return
         keyEditing=true
     }
-    fun commitKey() {
-        val p=parameter ?: return
+    fun commitKey() = editSafely {
+        val combo=editingCombinationId?.let { id -> project.combinations.firstOrNull { it.id==id } }
+        if(combo!=null) {
+            val next=selected?.let { part -> draft?.let { CombinationEngine.recordPart(project,combo,part,it) } }
+                ?: selectedDeformer?.let { node -> deformerDraft?.let { CombinationEngine.recordDeformer(project,combo,node,it) } }
+                ?: return@editSafely
+            Validation.check(next); change(next); cancelKey(); return@editSafely
+        }
+        val p=parameter ?: return@editSafely
         val values=keyValues(p)
-        if(values.size>=32 && values.none { abs(it-p.value)<.00001f }) { message(tr("키폼은 최대 32개입니다","Maximum 32 keyforms")); return }
+        if(values.size>=32 && values.none { abs(it-p.value)<.00001f }) { message(tr("키폼은 최대 32개입니다","Maximum 32 keyforms")); return@editSafely }
         selected?.let { part -> draft?.let { change(ParameterEngine.record(project,p.id,part.id,it)) } }
         selectedDeformer?.let { node -> deformerDraft?.let { change(Rigging.record(project,p.id,node.id,it)) } }
         cancelKey()
     }
-    fun cancelKey() { keyEditing=false; draft=null; deformerDraft=null }
+    fun cancelKey() { keyEditing=false; editingCombinationId=null; draft=null; deformerDraft=null }
     fun deleteKey() {
         val p=parameter ?: return; if(selectedLocked) return
         change(project.copy(parameters=project.parameters.map { if(it.id!=p.id) it else it.copy(
@@ -355,7 +424,8 @@ class EditorViewModel(app: Application): AndroidViewModel(app) {
         ) })); cancelKey()
     }
     fun previewParameter(id: String, value: Float) {
-        if(busy || keyEditing) return
+        if(busy || keyEditing || playing) return
+        animationPreview=false
         if(gestureStart==null) beginGesture()
         project=project.copy(parameters=project.parameters.map { if(it.id==id) it.copy(value=value.coerceIn(it.min,it.max)) else it })
     }
@@ -383,7 +453,7 @@ class EditorViewModel(app: Application): AndroidViewModel(app) {
         val part=selected ?: return; if(busy || selectedLocked) return
         val source=if(keyEditing) draft ?: return else part.mesh.vertices
         if(index !in source.indices) return
-        if(!keyEditing && project.parameters.any { it.bindings.any { b -> b.partId==part.id } }) { message(tr("키폼 편집을 켜세요","Enable keyform editing")); return }
+        if(!keyEditing && (project.parameters.any { it.bindings.any { b -> b.partId==part.id } } || project.combinations.any { it.targetId==part.id })) { message(tr("키폼 편집을 켜세요","Enable keyform editing")); return }
         if(rawVertexIndex!=index) { rawVertexIndex=index; rawVertexPosition=source[index] }
         val raw=(rawVertexPosition ?: source[index])+delta*(if(precise) .2f else 1f)
         rawVertexPosition=raw
@@ -419,6 +489,11 @@ class EditorViewModel(app: Application): AndroidViewModel(app) {
         val id=selectedId ?: selectedDeformerId ?: return@editSafely
         change(Rigging.reparent(project,id,parentId))
     }
+    fun resizeWarp(columns: Int, rows: Int) = editSafely {
+        val node=selectedDeformer ?: return@editSafely
+        if(busy || keyEditing || playing || selectedLocked) return@editSafely
+        change(Rigging.resizeWarp(project,node.id,columns,rows))
+    }
     fun updateDeformer(edit: (Deformer)->Deformer) {
         val node=selectedDeformer ?: return
         if(keyEditing) return
@@ -428,7 +503,8 @@ class EditorViewModel(app: Application): AndroidViewModel(app) {
         val node=selectedDeformer ?: return@editSafely; if(busy || selectedLocked) return@editSafely
         if(keyEditing) {
             val next=edit(deformerDraft ?: return@editSafely)
-            val check=Rigging.record(project,parameterId ?: return@editSafely,node.id,next)
+            val combo=editingCombinationId?.let { id -> project.combinations.firstOrNull { it.id==id } }
+            val check=if(combo!=null) CombinationEngine.recordDeformer(project,combo,node,next) else Rigging.record(project,parameterId ?: return@editSafely,node.id,next)
             Validation.check(check); deformerDraft=next
         } else {
             if(hasDeformerKeys) { message(tr("키폼 편집을 켜세요","Enable keyform editing")); return@editSafely }

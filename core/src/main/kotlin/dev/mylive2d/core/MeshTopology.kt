@@ -7,7 +7,8 @@ object MeshTopology {
     fun replace(project: Project, partId: String, mesh: Mesh): Project {
         require(project.parts.any { it.id == partId }) { "Part not found" }
         val result = project.copy(parts = project.parts.map { if (it.id == partId) it.copy(mesh = mesh) else it },
-            parameters = project.parameters.map { parameter -> parameter.copy(bindings = parameter.bindings.filterNot { it.partId == partId }) })
+            parameters = project.parameters.map { parameter -> parameter.copy(bindings = parameter.bindings.filterNot { it.partId == partId }) },
+            combinations = project.combinations.filterNot { it.targetId == partId })
         Validation.check(result)
         return result
     }
@@ -42,7 +43,8 @@ object MeshTopology {
         val triangles=mesh.triangles.take(hit.triangle*3)+listOf(triangle[0],triangle[1],vertex,triangle[1],triangle[2],vertex,triangle[2],triangle[0],vertex)+mesh.triangles.drop(hit.triangle*3+3)
         val next=mesh.copy(vertices=mesh.vertices+weighted(mesh.vertices),uv=mesh.uv+weighted(mesh.uv),triangles=triangles)
         val result=project.copy(parts=project.parts.map { if(it.id==partId) it.copy(mesh=next) else it },
-            parameters=project.parameters.map { p -> p.copy(bindings=p.bindings.map { b -> if(b.partId!=partId) b else b.copy(keys=b.keys.map { it.copy(vertices=it.vertices+weighted(it.vertices)) }) }) })
+            parameters=project.parameters.map { p -> p.copy(bindings=p.bindings.map { b -> if(b.partId!=partId) b else b.copy(keys=b.keys.map { it.copy(vertices=it.vertices+weighted(it.vertices)) }) }) },
+            combinations=project.combinations.map { b -> if(b.targetId!=partId) b else b.copy(keys=b.keys.map { it.copy(points=it.points+weighted(it.points)) }) })
         Validation.check(result); return result
     }
     /** Interior removal fills its star-shaped hole; boundary vertices stay protected to preserve texture coverage. */
@@ -67,7 +69,8 @@ object MeshTopology {
         val filled=triangulate(ring,mesh.vertices)
         val kept=(triangles.filter { index !in it }.flatten()+filled).map { if(it>index) it-1 else it }
         val next=mesh.copy(vertices=mesh.vertices.filterIndexed { i,_ -> i!=index },uv=mesh.uv.filterIndexed { i,_ -> i!=index },triangles=kept)
-        val result=project.copy(parts=project.parts.map { if(it.id==partId) it.copy(mesh=next) else it },parameters=project.parameters.map { p -> p.copy(bindings=p.bindings.map { b -> if(b.partId!=partId) b else b.copy(keys=b.keys.map { k -> k.copy(vertices=k.vertices.filterIndexed { i,_ -> i!=index }) }) }) })
+        val result=project.copy(parts=project.parts.map { if(it.id==partId) it.copy(mesh=next) else it },parameters=project.parameters.map { p -> p.copy(bindings=p.bindings.map { b -> if(b.partId!=partId) b else b.copy(keys=b.keys.map { k -> k.copy(vertices=k.vertices.filterIndexed { i,_ -> i!=index }) }) }) },
+            combinations=project.combinations.map { b -> if(b.targetId!=partId) b else b.copy(keys=b.keys.map { k -> k.copy(points=k.points.filterIndexed { i,_ -> i!=index }) }) })
         Validation.check(result); return result
     }
     private fun triangulate(input: List<Int>,points: List<Vec2>): List<Int> {

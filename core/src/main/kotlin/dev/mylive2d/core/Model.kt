@@ -50,11 +50,12 @@ fun newId(): String = UUID.randomUUID().toString()
     val deformerBindings: List<DeformerBinding> = emptyList()
 )
 @Serializable data class Project(
-    val format: String = "MyLive2D", val version: Int = 3, val id: String = newId(),
+    val format: String = "MyLive2D", val version: Int = 4, val id: String = newId(),
     val name: String = "새 프로젝트", val assets: List<Asset> = emptyList(),
     // First part is backmost. Order is identical in archives, evaluation and rendering.
     val parts: List<Part> = emptyList(), val parameters: List<Parameter> = emptyList(),
-    val deformers: List<Deformer> = emptyList(), val animations: List<AnimationClip> = emptyList()
+    val deformers: List<Deformer> = emptyList(), val animations: List<AnimationClip> = emptyList(),
+    val combinations: List<CombinationBinding> = emptyList()
 )
 
 object ParameterEngine {
@@ -74,6 +75,10 @@ object ParameterEngine {
                 val pose = interpolate(binding.keys, p.value.coerceIn(p.min,p.max))
                 result = result.indices.map { result[it] + (pose[it]-part.mesh.vertices[it]) }
             }
+        }
+        project.combinations.filter { it.targetId==part.id }.forEach { combo ->
+            val correction=CombinationEngine.sample(project,combo)
+            result=result.indices.map { result[it]+correction.points[it] }
         }
         return result
     }
@@ -132,7 +137,7 @@ class History(initial: Project, private val limit: Int = 40) {
 
 object Validation {
     fun check(p: Project) {
-        require(p.format == "MyLive2D" && p.version == 3) { "Unsupported project format/version" }
+        require(p.format == "MyLive2D" && p.version == 4) { "Unsupported project format/version" }
         fun id(s: String) = s.matches(Regex("[A-Za-z0-9-]{1,80}"))
         require(id(p.id) && p.name.isNotBlank() && p.name.length <= 120)
         require(p.assets.size <= 32 && p.parts.size <= 64 && p.parameters.size <= 32)
@@ -167,6 +172,7 @@ object Validation {
                 }
             }
         }
+        CombinationEngine.validate(p)
         AnimationEngine.validate(p)
     }
 }

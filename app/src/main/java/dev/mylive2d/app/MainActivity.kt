@@ -75,6 +75,7 @@ private enum class CompactEditorPanel { LAYERS, PROPERTIES }
     val sequenceExport=rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/zip")) { it?.let { uri -> vm.exportAnimationSequence(uri,animationExportSize) } }
     LaunchedEffect(vm) { vm.messages.collect { snack.showSnackbar(it) } }
     LaunchedEffect(sidePropertiesScreen) { if(sidePropertiesScreen) compactPanel=null }
+    LaunchedEffect(vm.keyEditing) { if(vm.keyEditing) compactPanel=null }
     BackHandler(enabled=compactPanel!=null) { compactPanel=null }
     DisposableEffect(lifecycle,surface) {
         val observer=LifecycleEventObserver { _,event -> when(event) {
@@ -91,7 +92,7 @@ private enum class CompactEditorPanel { LAYERS, PROPERTIES }
             Column {
                 AnimationTimeline(vm)
                 if(vm.keyEditing) Row(Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.secondaryContainer),verticalAlignment=Alignment.CenterVertically) {
-                    Text(vm.tr("키폼 편집 중","Editing keyform"),Modifier.weight(1f).padding(8.dp))
+                    Text(if(vm.editingCombinationId!=null) vm.tr("조합 키폼 편집 중","Editing combination key") else vm.tr("키폼 편집 중","Editing keyform"),Modifier.weight(1f).padding(8.dp))
                     TextButton(onClick=vm::commitKey) { Text(vm.tr("키폼 기록","Record keyform")) }
                     TextButton(onClick=vm::cancelKey) { Text(vm.tr("취소","Cancel")) }
                 }
@@ -268,7 +269,8 @@ private fun fit(vm: EditorViewModel,width: Float,height: Float) {
         } else if(vm.selectedDeformer==null) Text(vm.tr("파츠 또는 디포머를 선택하세요","Select a part or deformer"))
         HorizontalDivider(Modifier.padding(vertical=8.dp))
         Text(vm.tr("파라미터","Parameters"),style=MaterialTheme.typography.titleMedium)
-        TextButton(onClick={ parameter=true },enabled=vm.project.parameters.size<32) { Text(vm.tr("+ 파라미터 추가","+ Add parameter")) }
+        TextButton(onClick={ parameter=true },enabled=vm.project.parameters.size<32 && !vm.keyEditing) { Text(vm.tr("+ 파라미터 추가","+ Add parameter")) }
+        TextButton(onClick=vm::addRigPresets,enabled=!vm.busy && !vm.keyEditing && !vm.playing,modifier=Modifier.testTag("addRigPresets")) { Text(vm.tr("기본 리깅 파라미터 추가","Add standard rig parameters")) }
         vm.project.parameters.forEach { param ->
             Column(Modifier.fillMaxWidth().background(if(param.id==vm.parameterId) MaterialTheme.colorScheme.secondaryContainer else Color.Transparent).padding(5.dp).clickable { vm.selectParameter(param.id) }) {
                 Text(param.name,style=MaterialTheme.typography.labelLarge)
@@ -293,6 +295,7 @@ private fun fit(vm: EditorViewModel,width: Float,height: Float) {
             OutlinedButton(onClick=vm::startKey,enabled=!vm.selectedLocked && !vm.keyEditing && !vm.playing,modifier=Modifier.testTag("editKeyform")) { Text(vm.tr("현재 값 키폼 편집","Edit keyform at value")) }
             TextButton(onClick=vm::deleteKey,enabled=!vm.selectedLocked && !vm.keyEditing && !vm.playing) { Text(vm.tr("현재 값 키폼 삭제","Delete keyform at value")) }
         }
+        CombinationPanel(vm)
         if(vm.parameter!=null) TextButton(onClick=vm::deleteParameter,enabled=!vm.keyEditing) { Text(vm.tr("파라미터 삭제","Delete parameter")) }
     }
     if(name) NameDialog(vm,vm.tr("파츠 이름","Part name"),vm.selected?.name.orEmpty(),{ name=false }) { n -> vm.updatePart { it.copy(name=n.take(120)) }; name=false }

@@ -77,7 +77,7 @@ import dev.mylive2d.core.*
 
 @Composable internal fun DeformerProperties(vm: EditorViewModel) {
     val node=vm.selectedDeformer ?: return
-    var rename by remember(node.id) { mutableStateOf(false) }; var remove by remember(node.id) { mutableStateOf(false) }
+    var rename by remember(node.id) { mutableStateOf(false) }; var remove by remember(node.id) { mutableStateOf(false) }; var grid by remember(node.id) { mutableStateOf(false) }
     val pose=vm.deformerDraft ?: Rigging.pose(vm.project,node)
     val editable=!vm.selectedLocked && (!vm.hasDeformerKeys || vm.keyEditing)
     Text(node.name,style=MaterialTheme.typography.titleMedium)
@@ -91,7 +91,11 @@ import dev.mylive2d.core.*
     FloatEditor(vm.tr("회전축 X","Pivot X"),node.pivot.x,!vm.selectedLocked && !vm.keyEditing) { value -> vm.updateDeformer { it.copy(pivot=it.pivot.copy(x=value)) } }
     FloatEditor(vm.tr("회전축 Y","Pivot Y"),node.pivot.y,!vm.selectedLocked && !vm.keyEditing) { value -> vm.updateDeformer { it.copy(pivot=it.pivot.copy(y=value)) } }
     Text(vm.tr("주황색 끝점 드래그: 회전 · 중심점: 이동","Drag orange endpoint: rotate · pivot: move"),style=MaterialTheme.typography.labelSmall)
-    if(node.kind==DeformerKind.WARP) Text(vm.tr("격자 모드에서 제어점을 드래그하세요. 키폼 편집 중에는 선택 파라미터의 변형만 기록합니다.","Drag control points in grid mode. Keyform edits record only the selected parameter's contribution."),style=MaterialTheme.typography.labelSmall)
+    if(node.kind==DeformerKind.WARP) {
+        OutlinedButton(onClick={ grid=true },enabled=!vm.selectedLocked && !vm.keyEditing && !vm.playing,modifier=Modifier.testTag("warpGridSettings")) { Text(vm.tr("격자 분할: ","Grid divisions: ")+"${node.columns} × ${node.rows}") }
+        Text(vm.tr("격자 모드에서 제어점을 드래그하세요. 키폼 편집 중에는 선택 파라미터의 변형만 기록합니다.","Drag control points in grid mode. Keyform edits record only the selected parameter's contribution."),style=MaterialTheme.typography.labelSmall)
+        if(grid) WarpGridDialog(vm,node) { grid=false }
+    }
     TextButton(onClick={ remove=true },enabled=!vm.selectedLocked && !vm.keyEditing) { Text(vm.tr("선택 계층 삭제","Delete subtree"),color=MaterialTheme.colorScheme.error) }
     if(rename) NameDialog(vm,vm.tr("디포머 이름","Deformer name"),node.name,{ rename=false }) { name -> vm.updateDeformer { it.copy(name=name) }; rename=false }
     if(remove) {
@@ -101,4 +105,73 @@ import dev.mylive2d.core.*
             text={ Text(vm.tr("디포머/그룹 ${nodes.size}개와 파츠 ${parts}개를 삭제합니다. 실행 취소로 복구할 수 있습니다.","Deletes ${nodes.size} deformers/groups and $parts parts. Undo restores them.")) },
             confirmButton={ TextButton(onClick={ vm.removeDeformer(); remove=false }) { Text(vm.tr("삭제","Delete")) } },dismissButton={ TextButton(onClick={ remove=false }) { Text(vm.tr("취소","Cancel")) } })
     }
+}
+
+/** The 2D keys are corrections to the existing independent parameter shapes. */
+@Composable internal fun CombinationPanel(vm: EditorViewModel) {
+    var add by remember { mutableStateOf(false) }
+    var remove by remember { mutableStateOf<String?>(null) }
+    val first=vm.parameter
+    val hasTarget=vm.selected!=null || vm.selectedDeformer!=null
+    HorizontalDivider(Modifier.padding(vertical=8.dp))
+    Text(vm.tr("2차원 조합 보정","2D combination corrections"),style=MaterialTheme.typography.titleMedium)
+    Text(vm.tr("두 파라미터가 함께 바뀔 때 생기는 모양을 추가로 보정합니다. 먼저 파라미터를 선택하세요.",
+        "Correct the pose when two parameters change together. Select the first parameter above."),style=MaterialTheme.typography.bodySmall)
+    OutlinedButton(onClick={ add=true },enabled=hasTarget && first!=null && vm.project.parameters.size>=2 && !vm.selectedLocked && !vm.keyEditing && !vm.playing,
+        modifier=Modifier.testTag("addCombination")) { Text(vm.tr("+ 선택 파라미터와 조합","+ Combine selected parameter")) }
+    vm.selectedCombinations.forEach { combo ->
+        val x=vm.project.parameters.first { it.id==combo.xParameterId }
+        val y=vm.project.parameters.first { it.id==combo.yParameterId }
+        val active=CombinationEngine.isKey(vm.project,combo)
+        Surface(tonalElevation=2.dp,modifier=Modifier.fillMaxWidth().padding(vertical=4.dp)) {
+            Column(Modifier.padding(8.dp)) {
+                Text("${x.name} × ${y.name}",style=MaterialTheme.typography.titleSmall)
+                Text(vm.tr("가로: ","Horizontal: ")+x.name+vm.tr(" · 세로: "," · Vertical: ")+y.name,style=MaterialTheme.typography.labelSmall)
+                combo.yValues.asReversed().forEach { yValue ->
+                    Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(2.dp)) {
+                        combo.xValues.forEach { xValue ->
+                            val chosen=kotlin.math.abs(x.value-xValue)<.00001f && kotlin.math.abs(y.value-yValue)<.00001f
+                            OutlinedButton(onClick={ vm.selectCombinationKey(combo.id,xValue,yValue) },
+                                enabled=!vm.keyEditing && !vm.playing,contentPadding=PaddingValues(2.dp),
+                                modifier=Modifier.weight(1f).testTag("combination-${combo.id}-${combo.xValues.indexOf(xValue)}-${combo.yValues.indexOf(yValue)}")) {
+                                Text((if(chosen) "● " else "○ ")+String.format(java.util.Locale.ROOT,"%.1f/%.1f",xValue,yValue),style=MaterialTheme.typography.labelSmall,maxLines=1)
+                            }
+                        }
+                    }
+                }
+                if(!active) Text(vm.tr("키를 편집하려면 교차점을 선택하세요.","Select an intersection to edit a key."),style=MaterialTheme.typography.labelSmall)
+                Row(Modifier.horizontalScroll(rememberScrollState())) {
+                    TextButton(onClick={ vm.startCombinationKey(combo.id) },enabled=active && !vm.keyEditing && !vm.playing && !vm.selectedLocked,modifier=Modifier.testTag("editCombination-${combo.id}")) { Text(vm.tr("선택한 교차점 편집","Edit selected key")) }
+                    TextButton(onClick={ remove=combo.id },enabled=!vm.keyEditing && !vm.playing && !vm.selectedLocked) { Text(vm.tr("조합 삭제","Delete combination")) }
+                }
+            }
+        }
+    }
+    if(add && first!=null) AlertDialog(onDismissRequest={ add=false },title={ Text(vm.tr("두 번째 파라미터 선택","Choose the second parameter")) },text={
+        Column(Modifier.verticalScroll(rememberScrollState())) {
+            Text(vm.tr("첫 번째: ","First: ")+first.name)
+            vm.project.parameters.filter { it.id!=first.id }.forEach { other ->
+                TextButton(onClick={ vm.createCombination(other.id); add=false },modifier=Modifier.fillMaxWidth().testTag("combineWith-${other.id}")) { Text(other.name) }
+            }
+        }
+    },confirmButton={ TextButton(onClick={ add=false }) { Text(vm.tr("닫기","Close")) } })
+    remove?.let { id -> AlertDialog(onDismissRequest={ remove=null },title={ Text(vm.tr("조합 보정을 삭제할까요?","Delete this correction?")) },
+        text={ Text(vm.tr("이 조합의 모든 보정 키가 삭제됩니다. 실행 취소로 복원할 수 있습니다.","All correction keys in this combination will be removed. Undo can restore them.")) },
+        confirmButton={ TextButton(onClick={ vm.removeCombination(id); remove=null }) { Text(vm.tr("삭제","Delete")) } },
+        dismissButton={ TextButton(onClick={ remove=null }) { Text(vm.tr("취소","Cancel")) } }) }
+}
+
+@Composable internal fun WarpGridDialog(vm: EditorViewModel, node: Deformer, onDismiss: ()->Unit) {
+    var cols by remember(node.id) { mutableStateOf(node.columns.toString()) }
+    var rows by remember(node.id) { mutableStateOf(node.rows.toString()) }
+    val c=cols.toIntOrNull(); val r=rows.toIntOrNull()
+    AlertDialog(onDismissRequest=onDismiss,title={ Text(vm.tr("워프 격자 분할","Warp grid divisions")) },text={
+        Column(verticalArrangement=Arrangement.spacedBy(8.dp)) {
+            Text(vm.tr("기존 모양과 모든 키폼을 새 격자에 다시 샘플링합니다. 분할을 줄이거나 배수가 아닌 값으로 바꾸면 모양이 달라질 수 있습니다. 실행 취소로 복구할 수 있습니다.",
+                "Resamples the current shape and every key. Coarser or non-multiple divisions may change the shape. Undo restores it."))
+            OutlinedTextField(value=cols,onValueChange={ cols=it },singleLine=true,label={ Text(vm.tr("가로 (1~8)","Columns (1–8)")) })
+            OutlinedTextField(value=rows,onValueChange={ rows=it },singleLine=true,label={ Text(vm.tr("세로 (1~8)","Rows (1–8)")) })
+        }
+    },confirmButton={ TextButton(onClick={ vm.resizeWarp(c!!,r!!); onDismiss() },enabled=c in 1..8 && r in 1..8) { Text(vm.tr("적용","Apply")) } },
+        dismissButton={ TextButton(onClick=onDismiss) { Text(vm.tr("취소","Cancel")) } })
 }
