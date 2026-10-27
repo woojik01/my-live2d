@@ -163,6 +163,21 @@ class EditorViewModel(app: Application): AndroidViewModel(app) {
         history.commit(next); project = next; syncHistory(); dirty = true; revision++; select(next.parts.lastOrNull()?.id); autosave()
         message(tr("PNG 가져옴 · 파츠를 이동해 배치하세요","PNG imported · move parts into place"))
     }
+    fun importPsd(uri: Uri) = operation {
+        require(!keyEditing && !playing) { tr("키폼 편집과 재생을 먼저 마치세요","Finish key editing and playback first") }
+        val original=project
+        val loaded=withContext(Dispatchers.IO) { repository.importPsd(uri,original.assets.sumOf { it.width.toLong()*it.height },32-original.assets.size,64-original.parts.size) }
+        val doc=loaded.document
+        val parts=doc.layers.zip(loaded.assets).map { (layer,asset) ->
+            Part(name=layer.name,assetId=asset.id,mesh=Mesh.grid(layer.width.toFloat(),layer.height.toFloat()),
+                transform=Transform(position=Vec2(layer.left+layer.width/2f-doc.width/2f,layer.top+layer.height/2f-doc.height/2f)),
+                visible=layer.visible,opacity=layer.opacity)
+        }
+        val next=original.copy(assets=original.assets+loaded.assets,parts=original.parts+parts)
+        Validation.check(next)
+        history.commit(next); project=next; syncHistory(); dirty=true; revision++; select(parts.lastOrNull()?.id); autosave()
+        message(tr("PSD 레이어 가져오기 완료: ","PSD layers imported: ")+parts.size)
+    }
     fun select(id: String?) { cancelKey(); selectedId = id; selectedDeformerId=null; selectedVertex=-1 }
     fun selectDeformer(id: String?) { cancelKey(); selectedDeformerId=id; selectedId=null; selectedVertex=-1; meshMode=selectedDeformer?.kind==DeformerKind.WARP }
     fun selectParameter(id: String?) { cancelKey(); parameterId = id }

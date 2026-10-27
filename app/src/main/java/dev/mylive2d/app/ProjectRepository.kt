@@ -96,6 +96,24 @@ class ProjectRepository(private val context: Context) {
             textures.values.forEach { if(!it.isRecycled) it.recycle() }
         }
     }
+    data class ImportedPsd(val document: PsdReader.Document, val assets: List<Asset>)
+    /** Decode fully before committing image assets; failed conversions remove every temporary file. */
+    fun importPsd(uri: Uri, existingPixels: Long, availableAssets: Int, availableParts: Int): ImportedPsd {
+        val document=context.contentResolver.openInputStream(uri)?.use { PsdReader.read(it) } ?: error("Cannot read PSD")
+        require(document.layers.size<=availableAssets && document.layers.size<=availableParts) { "Project image/part limit exceeded" }
+        require(document.layers.sumOf { it.width.toLong()*it.height }+existingPixels<=16_777_216L) { "Image memory budget exceeded" }
+        val written=mutableListOf<File>()
+        try {
+            val assets=document.layers.map { layer ->
+                val asset=Asset(width=layer.width,height=layer.height); val target=assetFile(asset.id); written.add(target)
+                val bitmap=Bitmap.createBitmap(layer.pixels,layer.width,layer.height,Bitmap.Config.ARGB_8888)
+                try { target.outputStream().use { check(bitmap.compress(Bitmap.CompressFormat.PNG,100,it)) { "PNG conversion failed" } } }
+                finally { bitmap.recycle() }
+                require(target.length()<=16*1024*1024) { "PSD layer PNG exceeds 16 MB" }; asset
+            }
+            return ImportedPsd(document,assets)
+        } catch(e: Exception) { written.forEach { it.delete() }; throw e }
+    }
     data class Imported(val asset: Asset, val name: String)
     fun generateAlphaMesh(asset: Asset, detail: Int, threshold: Int, padding: Int): AlphaMesh.Result {
         val bitmap = BitmapFactory.decodeFile(assetFile(asset.id).absolutePath) ?: error("Cannot decode PNG asset")

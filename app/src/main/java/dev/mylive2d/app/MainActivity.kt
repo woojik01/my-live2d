@@ -70,6 +70,7 @@ private enum class CompactEditorPanel { LAYERS, PROPERTIES }
     val context=LocalContext.current
     val surface=remember { ModelSurface(context,vm) }
     val png=rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { if(it.isNotEmpty()) vm.importPng(it) }
+    val psd=rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { it?.let(vm::importPsd) }
     val open=rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { it?.let(vm::importProject) }
     val export=rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/zip")) { it?.let(vm::export) }
     val sequenceExport=rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/zip")) { it?.let { uri -> vm.exportAnimationSequence(uri,animationExportSize) } }
@@ -128,6 +129,7 @@ private enum class CompactEditorPanel { LAYERS, PROPERTIES }
                 TextButton(onClick={ if(dualPaneScreen) left=!left else compactPanel=CompactEditorPanel.LAYERS },modifier=Modifier.testTag("panelParts")) { Text(vm.tr("파츠","Parts")) }
                 TextButton(onClick={ if(sidePropertiesScreen) right=!right else compactPanel=CompactEditorPanel.PROPERTIES },modifier=Modifier.testTag("panelProperties")) { Text(vm.tr("속성","Properties")) }
                 TextButton(onClick={ png.launch(arrayOf("image/png")) },enabled=!vm.busy,modifier=Modifier.testTag("importPng")) { Text("+ PNG") }
+                TextButton(onClick={ psd.launch(arrayOf("image/vnd.adobe.photoshop","application/octet-stream","*/*")) },enabled=!vm.busy && !vm.keyEditing && !vm.playing,modifier=Modifier.testTag("importPsd")) { Text("+ PSD") }
                 FilterChip(selected=vm.meshMode,onClick={ vm.meshMode=!vm.meshMode },label={ Text(if(vm.selectedDeformer?.kind==DeformerKind.WARP) vm.tr("격자","Grid edit") else vm.tr("메쉬","Mesh")) })
                 Box {
                     TextButton(onClick={ toolsExpanded=true },modifier=Modifier.testTag("moreEditorTools")) { Text("⋯") }
