@@ -99,6 +99,56 @@ object Rigging {
         }
         RigValidation.check(result); return result
     }
+    /** Preserve every keyform under static similarity-transform parents, or fail without changing anything. */
+    fun reparentPreserving(project: Project, id: String, parentId: String?): Project {
+        val part=project.parts.firstOrNull { it.id==id }
+        val node=project.deformers.firstOrNull { it.id==id }
+        require(part!=null || node!=null) { "Missing node" }
+        val oldParent=part?.parentId ?: node?.parentId
+        if(oldParent==parentId) return project
+        // Validate the hierarchy before computing anything; this catches cycles and missing parents.
+        val reparented=reparent(project,id,parentId)
+        fun compose(a: Transform,b: Transform)=Transform(a.apply(b.position),a.rotation+b.rotation,a.scale*b.scale)
+        fun matrix(d: Deformer): Transform {
+            val t=d.transform
+            val rotated=Transform(rotation=t.rotation,scale=t.scale).apply(d.pivot)
+            return Transform(d.pivot+t.position-rotated,t.rotation,t.scale)
+        }
+        fun parentMatrix(parent: String?): Transform {
+            var current=parent; var result=Transform()
+            while(current!=null) {
+                val d=project.deformers.first { it.id==current }
+                require(d.kind!=DeformerKind.WARP) { "Cannot preserve all poses through a warp parent; choose local coordinates or change the hierarchy" }
+                require(project.parameters.none { p -> p.deformerBindings.any { it.deformerId==d.id } } && project.combinations.none { it.targetId==d.id }) {
+                    "Cannot preserve all poses through an animated parent; choose local coordinates or remove its keys"
+                }
+                result=compose(matrix(d),result); current=d.parentId
+            }
+            return result
+        }
+        val old=parentMatrix(oldParent); val new=parentMatrix(parentId)
+        val inverse=Transform(new.inverse(Vec2()),-new.rotation,1f/new.scale)
+        val relative=compose(inverse,old)
+        val result=if(part!=null) {
+            reparented.copy(parts=reparented.parts.map { if(it.id==id) it.copy(transform=compose(relative,it.transform)) else it })
+        } else {
+            val target=node!!
+            fun convert(t: Transform): Transform {
+                val combined=compose(relative,matrix(target.copy(transform=t)))
+                val rotated=Transform(rotation=combined.rotation,scale=combined.scale).apply(target.pivot)
+                return combined.copy(position=combined.position-target.pivot+rotated)
+            }
+            fun vector(v: Vec2)=Transform(rotation=relative.rotation,scale=relative.scale).apply(v)
+            reparented.copy(
+                deformers=reparented.deformers.map { if(it.id==id) it.copy(transform=convert(it.transform)) else it },
+                parameters=reparented.parameters.map { p -> p.copy(deformerBindings=p.deformerBindings.map { b ->
+                    if(b.deformerId!=id) b else b.copy(keys=b.keys.map { k -> k.copy(pose=k.pose.copy(transform=convert(k.pose.transform))) })
+                }) },
+                combinations=reparented.combinations.map { b -> if(b.targetId!=id) b else b.copy(keys=b.keys.map { k -> k.copy(position=vector(k.position)) }) }
+            )
+        }
+        Validation.check(result); return result
+    }
     fun subtree(project: Project, root: String): Set<String> {
         val result=mutableSetOf(root)
         var changed=true

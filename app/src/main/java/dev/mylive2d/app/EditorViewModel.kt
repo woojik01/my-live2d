@@ -484,10 +484,10 @@ class EditorViewModel(app: Application): AndroidViewModel(app) {
         if(child!=null) next=Rigging.reparent(next,child,node.id)
         change(next); if(project.deformers.any { it.id==node.id }) selectDeformer(node.id)
     }
-    fun setParent(parentId: String?) = editSafely {
+    fun setParent(parentId: String?, preserve: Boolean = true) = editSafely {
         if(busy || keyEditing || selectedLocked) return@editSafely
         val id=selectedId ?: selectedDeformerId ?: return@editSafely
-        change(Rigging.reparent(project,id,parentId))
+        change(if(preserve) Rigging.reparentPreserving(project,id,parentId) else Rigging.reparent(project,id,parentId))
     }
     fun resizeWarp(columns: Int, rows: Int) = editSafely {
         val node=selectedDeformer ?: return@editSafely

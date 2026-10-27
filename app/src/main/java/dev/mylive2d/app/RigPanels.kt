@@ -57,6 +57,7 @@ import dev.mylive2d.core.*
 
 @Composable internal fun ParentPicker(vm: EditorViewModel) {
     var open by remember { mutableStateOf(false) }
+    var preserve by remember { mutableStateOf(true) }
     val parent=vm.selected?.parentId ?: vm.selectedDeformer?.parentId
     val current=parent?.let { id -> vm.project.deformers.firstOrNull { it.id==id }?.name } ?: vm.tr("루트","Root")
     OutlinedButton(onClick={ open=true },enabled=!vm.busy && !vm.keyEditing && !vm.selectedLocked,modifier=Modifier.testTag("parentPicker")) { Text(vm.tr("부모: ","Parent: ")+current) }
@@ -65,10 +66,12 @@ import dev.mylive2d.core.*
         val excluded=vm.selectedDeformerId?.let { Rigging.subtree(vm.project,it) } ?: emptySet()
         AlertDialog(onDismissRequest={ open=false },title={ Text(vm.tr("부모 연결","Set parent")) },text={
             Column(Modifier.verticalScroll(rememberScrollState())) {
-                Text(vm.tr("로컬 좌표를 유지합니다. 변형된 부모로 바꾸면 화면상 위치가 달라질 수 있습니다.","Keeps local coordinates. A transformed parent can change the visible position."))
-                TextButton(onClick={ vm.setParent(null); open=false }) { Text(vm.tr("루트 (부모 없음)","Root (no parent)")) }
+                Text(vm.tr("위치 유지는 고정 회전·그룹 부모에서 모든 키폼을 보존합니다. 워프 또는 애니메이션 부모는 위치 유지가 지원되지 않습니다.","Preserve all poses works with static rotation/group parents. Warped or animated parents cannot be preserved."))
+                Row { Checkbox(checked=preserve,onCheckedChange={ preserve=it }); Text(vm.tr("화면상 위치 유지", "Preserve world position")) }
+                if(!preserve) Text(vm.tr("로컬 좌표를 유지하므로 화면상 위치가 바뀔 수 있습니다.","Local coordinates stay unchanged; the visible position can move."))
+                TextButton(onClick={ vm.setParent(null,preserve); open=false }) { Text(vm.tr("루트 (부모 없음)","Root (no parent)")) }
                 vm.project.deformers.filter { it.id!=id && it.id !in excluded }.forEach { node ->
-                    TextButton(onClick={ vm.setParent(node.id); open=false }) { Text(node.name) }
+                    TextButton(onClick={ vm.setParent(node.id,preserve); open=false }) { Text(node.name) }
                 }
             }
         },confirmButton={ TextButton(onClick={ open=false }) { Text(vm.tr("닫기","Close")) } })
