@@ -61,6 +61,7 @@ class CombinationDeviceTest {
             assertEquals(ParameterEngine.vertices(snapshot,snapshot.parts.single()),ParameterEngine.vertices(reopened,reopened.parts.single()))
         } finally {
             scenario.close()
+            Thread.sleep(900)
             projectId?.let { repository.delete(it) }
             repository.active=oldActive
             image.delete()

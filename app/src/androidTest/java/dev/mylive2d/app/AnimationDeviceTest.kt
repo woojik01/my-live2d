@@ -114,7 +114,7 @@ class AnimationDeviceTest {
         }
         val original=file.readBytes()
         try {
-            assertEquals(3,repo.open(old.id).version)
+            assertEquals(4,repo.open(old.id).version)
             assertArrayEquals(original,File(file.parentFile,"${old.id}.v2copy").readBytes())
         } finally { repo.delete(old.id) }
     }

@@ -141,15 +141,15 @@ class RigDeviceTest {
             }
         } finally { scenario.close(); Thread.sleep(800); repo.active=oldActive; projectId?.let { repo.delete(it) }; image.delete() }
     }
-    @Test fun legacyOpenMakesV1BackupBeforeSavingV2() = runBlocking<Unit> {
+    @Test fun legacyOpenMakesV1BackupBeforeSavingCurrentVersion() = runBlocking<Unit> {
         val context=ApplicationProvider.getApplicationContext<Context>(); val repo=ProjectRepository(context)
         val old=Project(version=1,name="Legacy")
         val file=File(context.filesDir,"projects/${old.id}.mylive2d"); file.parentFile!!.mkdirs()
         ZipOutputStream(file.outputStream()).use { z -> z.putNextEntry(ZipEntry("project.json")); z.write(Json.encodeToString(old).toByteArray()); z.closeEntry() }
         val original=file.readBytes(); val restored=repo.open(old.id)
-        assertEquals(3,restored.version)
+        assertEquals(4,restored.version)
         assertArrayEquals(original,File(file.parentFile,"${old.id}.v1copy").readBytes())
-        repo.save(restored); assertEquals(3,file.inputStream().use { ProjectArchive.read(it).sourceVersion })
+        repo.save(restored); assertEquals(4,file.inputStream().use { ProjectArchive.read(it).sourceVersion })
         repo.delete(old.id)
     }
     private fun findSurface(view: View): ModelSurface? {
