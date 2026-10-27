@@ -4,4 +4,4 @@ dependencyResolutionManagement {
     repositories { google(); mavenCentral() }
 }
 rootProject.name = "MyLive2D"
-include(":core", ":app")
+include(":core", ":app", ":twa")
