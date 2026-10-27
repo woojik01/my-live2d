@@ -1,3 +1,11 @@
+# My Live2D — Web 리깅 에디터
+
+GitHub Pages에서 작동하고 Android TWA로 설치할 수 있는 웹 버전을 `web/`에 추가했습니다. 브라우저 기반 PNG 파츠·메쉬·디포머·파라미터·2차원 조합 키폼 편집을 지원합니다. 사용법, 현재 제한, GitHub Pages 및 TWA 인증 설정은 [웹 안내서](web/README.md)를 확인하세요. TWA 실행 모듈은 `twa/`에 있습니다.
+
+아래 내용은 이전 Android 네이티브 편집기 설명입니다. 기존 소스 및 포맷은 보존되며 웹 버전과 파일 호환은 지원하지 않습니다.
+
+---
+
 # My Live 2D — Phase 4
 
 Android 스마트폰·태블릿용 독립 2D 캐릭터 모델 편집기. Kotlin + Jetpack Compose + OpenGL ES 2.0. 핵심 편집은 오프라인으로 동작하며 INTERNET 권한과 계정/서버를 사용하지 않습니다. 자체 `.mylive2d` ZIP/JSON/PNG 포맷을 사용하고 Cubism SDK·독점 소스·공식 파일 호환을 포함하지 않습니다.
