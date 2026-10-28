@@ -138,3 +138,11 @@ dialog{max-height:90dvh;overflow:auto;box-shadow:0 24px 80px #0008}
 @media(prefers-reduced-motion:reduce){
   *,*::before,*::after{scroll-behavior:auto!important;transition:none!important;animation:none!important}
 }
+
+/* Keep editor controls clear of display cutouts in installed PWAs and TWA. */
+@media(max-width:800px){
+  .topbar{height:calc(58px + env(safe-area-inset-top));padding-top:env(safe-area-inset-top)}
+  .workspace{height:calc(100dvh - 112px - env(safe-area-inset-top) - env(safe-area-inset-bottom))}
+  .panel{top:calc(58px + env(safe-area-inset-top));bottom:calc(54px + env(safe-area-inset-bottom))}
+  .mobile-nav{height:calc(54px + env(safe-area-inset-bottom));padding-bottom:env(safe-area-inset-bottom)}
+}
