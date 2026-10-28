@@ -214,4 +214,60 @@ async function readPsd(buffer,name='Imported PSD'){
   return {document,nestedGroups};
 }
 
-export {readPsd};
+
+/** Read the PSD/PSB composite, without pretending its flattened pixels are editable layers. */
+async function readPsdMerged(buffer,name='Imported PSD'){
+ const bytes=new Uint8Array(buffer),r=new Reader(bytes);
+ if(r.ascii(4)!=='8BPS')fail('psdInvalid');
+ const version=r.u16();if(version!==1&&version!==2)fail('psdUnsupported');
+ r.skip(6);const channels=r.u16(),height=r.u32(),width=r.u32(),depth=r.u16(),mode=r.u16();
+ const base=mode===3?3:mode===1?1:0;
+ if(!base||![8,16,32].includes(depth)||channels<base||channels>16||!width||!height)fail('psdUnsupported');
+ const pixels=width*height,bpp=depth/8,rowBytes=width*bpp;
+ if(!Number.isSafeInteger(pixels)||pixels>16777216||pixels*channels*bpp>MAX_BYTES)fail('psdMemory');
+ r.skip(r.u32());r.skip(r.u32());
+ const layerLength=version===2?r.u64():r.u32(),layerEnd=boundedEnd(r,layerLength);
+ let hasMergedAlpha=false;
+ if(layerLength>=(version===2?10:6)){
+  const info=new Reader(bytes,r.offset,layerEnd),infoSize=version===2?info.u64():info.u32();
+  if(infoSize>=2&&infoSize<=info.remaining)hasMergedAlpha=info.s16()<0;
+ }
+ r.offset=layerEnd;
+ const compression=r.u16();let planes=[];
+ if(compression===0){
+  for(let c=0;c<channels;c++)planes.push(r.take(pixels*bpp));
+ }else if(compression===1){
+  const rowCount=height*channels,entrySize=version===2?4:2;
+  if(rowCount*entrySize>r.remaining)fail('psdCorrupt');
+  const sizes=[];for(let i=0;i<rowCount;i++)sizes.push(version===2?r.u32():r.u16());
+  for(let c=0;c<channels;c++){const plane=new Uint8Array(pixels*bpp);
+   for(let y=0;y<height;y++){const end=boundedEnd(r,sizes[c*height+y]);plane.set(decodePackBits(bytes,r.offset,end,rowBytes),y*rowBytes);r.offset=end}
+   planes.push(plane);
+  }
+ }else if(compression===2||compression===3){
+  if(compression===3&&depth!==8)fail('psdCompression');
+  const raw=await inflateDeflate(r.take(r.remaining),pixels*channels*bpp);
+  for(let c=0;c<channels;c++){const plane=raw.subarray(c*pixels*bpp,(c+1)*pixels*bpp);
+   if(compression===3)for(let y=0;y<height;y++)for(let x=1;x<rowBytes;x++){const i=y*rowBytes+x;plane[i]=(plane[i]+plane[i-1])&255}
+   planes.push(plane);
+  }
+ }else fail('psdCompression');
+ const views=planes.map(p=>new DataView(p.buffer,p.byteOffset,p.byteLength));
+ const sample=(c,i)=>{
+  if(depth===8)return planes[c][i];
+  if(depth===16)return Math.round(views[c].getUint16(i*2)/257);
+  const value=views[c].getFloat32(i*4);
+  return Number.isFinite(value)?Math.round(Math.max(0,Math.min(1,value))*255):0;
+ };
+ const source=canvas(width,height),ctx=source.getContext('2d'),image=ctx.createImageData(width,height);
+ for(let i=0;i<pixels;i++){const offset=i*4,v=sample(0,i);image.data[offset]=v;image.data[offset+1]=base===1?v:sample(1,i);image.data[offset+2]=base===1?v:sample(2,i);image.data[offset+3]=hasMergedAlpha&&channels>base?sample(base,i):255}
+ ctx.putImageData(image,0,0);
+ const scale=Math.min(1,2048/width,2048/height);
+ const w=Math.max(1,Math.round(width*scale)),h=Math.max(1,Math.round(height*scale));
+ const item=createLayer('합성 이미지',w,h);
+ if(scale<1)item.canvas.getContext('2d').drawImage(source,0,0,w,h);else item.canvas.getContext('2d').putImageData(image,0,0);
+ item.left=0;item.top=0;
+ return {merged:true,originalWidth:width,originalHeight:height,document:{name,width:w,height:h,layers:[item]}};
+}
+
+export {readPsd,readPsdMerged};

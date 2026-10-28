@@ -1,5 +1,5 @@
 import * as R from './rig-core.mjs';
-import {readPsd} from './psd.mjs';
+import {readPsd,readPsdMerged} from './psd.mjs';
 const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)];
 const canvas=$('#canvas'),ctx=canvas.getContext('2d');
 let project=R.emptyProject(),selected=null,paramId=null,mode='move',draft=null,history=[],future=[],gesture=null;
@@ -73,9 +73,14 @@ $('#psd-input').onchange=async e=>{
  try{
   const file=e.target.files[0];if(!file)return;
   if(draft)throw Error('키폼 편집을 먼저 마치세요');
-  if(file.size>64*1024*1024)throw Error('PSD는 64MB 이하여야 합니다');
+  if(file.size>256*1024*1024)throw Error('PSD는 256MB 이하여야 합니다');
   toast('PSD 레이어를 불러오는 중…');
-  const result=await readPsd(await file.arrayBuffer(),file.name);
+  const buffer=await file.arrayBuffer();let result;
+  try{result=await readPsd(buffer,file.name)}catch(error){
+   if(!['psdUnsupported','psdUnsupportedLayers','psdMemory','psdTooManyLayers'].includes(error.code))throw error;
+   if(!confirm('이 PSD는 레이어별 가져오기를 지원하지 않습니다. 저장된 합성 이미지를 한 개의 파츠로 가져올까요? 레이어와 효과는 개별 편집할 수 없으며, 8비트로 변환되고 긴 변이 2048픽셀을 넘으면 축소됩니다.'))return;
+   result=await readPsdMerged(buffer,file.name);
+  }
   const layers=result.document.layers.filter(x=>x.type==='paint'&&x.canvas.width&&x.canvas.height);
   if(!layers.length)throw Error('가져올 이미지 레이어가 없습니다');
   if(project.assets.length+layers.length>32||project.parts.length+layers.length>64)throw Error('프로젝트는 최대 이미지 32개, 파츠 64개입니다');
@@ -92,7 +97,7 @@ $('#psd-input').onchange=async e=>{
   });
   const candidate=clone(project);for(const {asset,part} of additions){candidate.assets.push(asset);candidate.parts.push(part)}R.validate(candidate);
   change(()=>{for(const {asset,part} of additions){project.assets.push(asset);project.parts.push(part)}selected=additions.at(-1).part.id});
-  closePanels();fit();toast('PSD 레이어 '+additions.length+'개를 파츠로 가져왔습니다');
+  closePanels();fit();toast(result.merged?'합성 이미지를 한 개의 파츠로 가져왔습니다':'PSD 레이어 '+additions.length+'개를 파츠로 가져왔습니다');
  }catch(e){
   const messages={psdInvalid:'올바른 PSD 파일이 아닙니다',psdCorrupt:'PSD 파일이 손상되었거나 지원하지 않는 구조입니다',psdUnsupported:'8비트 RGB PSD만 지원합니다',psdUnsupportedLayers:'PSD의 텍스트·벡터·효과·클리핑·특수 혼합 모드 또는 그룹 불투명도는 지원하지 않습니다',psdMemory:'PSD 크기 또는 레이어 수가 제한을 초과합니다',psdTooManyLayers:'PSD 레이어가 너무 많습니다',psdCompression:'지원하지 않는 PSD 압축 방식입니다',psdZipUnavailable:'이 브라우저는 PSD ZIP 압축 해제를 지원하지 않습니다'};
   err(new Error(messages[e.code]||e.message||'PSD를 불러오지 못했습니다'));
