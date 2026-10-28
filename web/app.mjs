@@ -77,7 +77,7 @@ $('#psd-input').onchange=async e=>{
   toast('PSD 레이어를 불러오는 중…');
   const buffer=await file.arrayBuffer();let result;
   try{result=await readPsd(buffer,file.name)}catch(error){
-   if(!['psdUnsupported','psdUnsupportedLayers','psdMemory','psdTooManyLayers'].includes(error.code))throw error;
+   if(!['psdUnsupported','psdUnsupportedLayers','psdMemory','psdTooManyLayers','psdCompression','psdZipUnavailable'].includes(error.code))throw error;
    if(!confirm('이 PSD는 레이어별 가져오기를 지원하지 않습니다. 저장된 합성 이미지를 한 개의 파츠로 가져올까요? 레이어와 효과는 개별 편집할 수 없으며, 8비트로 변환되고 긴 변이 2048픽셀을 넘으면 축소됩니다.'))return;
    result=await readPsdMerged(buffer,file.name);
   }
