@@ -1,7 +1,7 @@
 const BUILD_ID='__BUILD_ID__';
 const CACHE_PREFIX='my-live2d-web-';
 const CACHE=CACHE_PREFIX+BUILD_ID;
-const FILES=['./','./index.html','./style.css','./app.mjs','./rig-core.mjs','./manifest.webmanifest','./icon-192.png','./icon-512.png','./demo.png'];
+const FILES=['./','./index.html','./style.css','./app.mjs','./rig-core.mjs','./psd.mjs','./psd-model.mjs','./manifest.webmanifest','./icon-192.png','./icon-512.png','./demo.png'];
 
 self.addEventListener('install',event=>event.waitUntil((async()=>{
  const cache=await caches.open(CACHE);

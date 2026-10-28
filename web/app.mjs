@@ -1,4 +1,5 @@
 import * as R from './rig-core.mjs';
+import {readPsd} from './psd.mjs';
 const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)];
 const canvas=$('#canvas'),ctx=canvas.getContext('2d');
 let project=R.emptyProject(),selected=null,paramId=null,mode='move',draft=null,history=[],future=[],gesture=null;
@@ -54,6 +55,36 @@ $('#undo').onclick=()=>{if(draft)return toast('키폼 편집을 먼저 마치세
 $('#import-png').onclick=$('#empty-import').onclick=()=>$('#png-input').click();
 async function readImage(file){if(file.type!=='image/png'||file.size>16*1024*1024)throw Error('16MB 이하 PNG만 지원합니다');let src=await new Promise((ok,no)=>{let r=new FileReader();r.onload=()=>ok(r.result);r.onerror=()=>no(r.error);r.readAsDataURL(file)});let image=new Image();image.src=src;await image.decode();if(image.width>2048||image.height>2048)throw Error('이미지는 최대 2048×2048입니다');return{id:R.uid(),src,width:image.width,height:image.height,name:file.name.replace(/\.png$/i,'').slice(0,120)||'파츠'}}
 $('#png-input').onchange=async e=>{try{let files=[...e.target.files];if(!files.length)return;if(draft)throw Error('키폼 편집을 먼저 마치세요');if(project.assets.length+files.length>32||project.parts.length+files.length>64)throw Error('최대 이미지 32개, 파츠 64개입니다');let assets=await Promise.all(files.map(readImage));if([...project.assets,...assets].reduce((s,a)=>s+a.width*a.height,0)>16777216)throw Error('전체 이미지 용량이 너무 큽니다');change(()=>{for(const a of assets){project.assets.push(a);project.parts.push(R.makePart(a.name,a))}selected=project.parts.at(-1).id});closePanels();fit();toast('PNG 파츠를 불러왔습니다')}catch(e){err(e)}finally{e.target.value=''}};
+$('#import-psd').onclick=()=>$('#psd-input').click();
+$('#psd-input').onchange=async e=>{
+ try{
+  const file=e.target.files[0];if(!file)return;
+  if(draft)throw Error('키폼 편집을 먼저 마치세요');
+  if(file.size>64*1024*1024)throw Error('PSD는 64MB 이하여야 합니다');
+  toast('PSD 레이어를 불러오는 중…');
+  const result=await readPsd(await file.arrayBuffer(),file.name);
+  const layers=result.document.layers.filter(x=>x.type==='paint'&&x.canvas.width&&x.canvas.height);
+  if(!layers.length)throw Error('가져올 이미지 레이어가 없습니다');
+  if(project.assets.length+layers.length>32||project.parts.length+layers.length>64)throw Error('프로젝트는 최대 이미지 32개, 파츠 64개입니다');
+  const total=project.assets.reduce((n,a)=>n+a.width*a.height,0)+layers.reduce((n,l)=>n+l.canvas.width*l.canvas.height,0);
+  if(total>16777216)throw Error('전체 이미지 크기가 16메가픽셀을 초과합니다');
+  const groups=new Map(result.document.layers.filter(x=>x.type==='group').map(x=>[x.id,x]));
+  const additions=layers.map(l=>{
+   if(l.mask){const c=l.canvas.getContext('2d');c.globalCompositeOperation='destination-in';c.drawImage(l.mask,0,0);c.globalCompositeOperation='source-over'}
+   const asset={id:R.uid(),name:l.name.slice(0,120)||'레이어',src:l.canvas.toDataURL('image/png'),width:l.canvas.width,height:l.canvas.height};
+   const part=R.makePart(asset.name,asset),group=groups.get(l.parent);
+   part.visible=l.visible&&(!group||group.visible);part.opacity=l.opacity*(group?.opacity??1);
+   part.transform.position=R.V((l.left??0)+asset.width/2-result.document.width/2,(l.top??0)+asset.height/2-result.document.height/2);
+   return {asset,part};
+  });
+  const candidate=clone(project);for(const {asset,part} of additions){candidate.assets.push(asset);candidate.parts.push(part)}R.validate(candidate);
+  change(()=>{for(const {asset,part} of additions){project.assets.push(asset);project.parts.push(part)}selected=additions.at(-1).part.id});
+  closePanels();fit();toast('PSD 레이어 '+additions.length+'개를 파츠로 가져왔습니다');
+ }catch(e){
+  const messages={psdInvalid:'올바른 PSD 파일이 아닙니다',psdCorrupt:'PSD 파일이 손상되었거나 지원하지 않는 구조입니다',psdUnsupported:'8비트 RGB PSD만 지원합니다',psdUnsupportedLayers:'PSD의 텍스트·벡터·효과·클리핑·특수 혼합 모드 또는 그룹 불투명도는 지원하지 않습니다',psdMemory:'PSD 크기 또는 레이어 수가 제한을 초과합니다',psdTooManyLayers:'PSD 레이어가 너무 많습니다',psdCompression:'지원하지 않는 PSD 압축 방식입니다',psdZipUnavailable:'이 브라우저는 PSD ZIP 압축 해제를 지원하지 않습니다'};
+  err(new Error(messages[e.code]||e.message||'PSD를 불러오지 못했습니다'));
+ }finally{e.target.value=''}
+};
 function boundsFor(t){const p=preview();let pts=t.mesh?R.partWorld(p,t):project.parts.filter(x=>R.chain(p,x.parent).some(n=>n.id===t.id)).flatMap(x=>R.partWorld(p,x));if(!pts.length)return{x:0,y:0,w:300,h:300};let par=t.parent,local=pts.map(x=>R.worldToParent(p,par,x)),x0=Math.min(...local.map(x=>x.x)),x1=Math.max(...local.map(x=>x.x)),y0=Math.min(...local.map(x=>x.y)),y1=Math.max(...local.map(x=>x.y));return{x:(x0+x1)/2,y:(y0+y1)/2,w:x1-x0+40,h:y1-y0+40}}
 function addNode(kind){let t=target();if(!t)return toast('먼저 파츠나 디포머를 선택하세요');if(t.locked)return;if(project.deformers.length>=64)return toast('디포머 수 제한에 도달했습니다');change(()=>{let n=R.makeDeformer(kind,t.parent,boundsFor(t));project.deformers.push(n);t.parent=n.id;selected=n.id;mode=kind==='warp'?'mesh':'move'})}
 $('#add-warp').onclick=()=>addNode('warp');$('#add-rotation').onclick=()=>addNode('rotation');
