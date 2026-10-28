@@ -46,6 +46,10 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v5
+      - name: Stamp service worker build version
+        env:
+          BUILD_ID: \${{ github.sha }}
+        run: sed -i "s/__BUILD_ID__/\$BUILD_ID/g" web/sw.js
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with: {path: web}
