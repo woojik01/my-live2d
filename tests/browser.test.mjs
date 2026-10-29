@@ -4,6 +4,20 @@ import { chromium } from 'playwright';
 import { spawn } from 'node:child_process';
 import { setTimeout as delay } from 'node:timers/promises';
 
+
+function clippedFixture(){
+ const u16=n=>{const b=Buffer.alloc(2);b.writeUInt16BE(n);return b},s16=n=>{const b=Buffer.alloc(2);b.writeInt16BE(n);return b},u32=n=>{const b=Buffer.alloc(4);b.writeUInt32BE(n);return b},i32=n=>{const b=Buffer.alloc(4);b.writeInt32BE(n);return b};
+ function layer(name,clipped){
+  const channels=[0,1,2,-1].map((id,i)=>({id,bytes:Buffer.concat([u16(0),Buffer.from([i===3?255:100+i])])}));
+  const pascal=Buffer.alloc(4);pascal[0]=name.length;Buffer.from(name).copy(pascal,1);
+  const extra=Buffer.concat([u32(0),u32(0),pascal]);
+  const header=Buffer.concat([i32(0),i32(0),i32(1),i32(1),u16(4),...channels.map(c=>Buffer.concat([s16(c.id),u32(c.bytes.length)])),Buffer.from(clipped?'8BIMmul ':'8BIMnorm'),Buffer.from([255,clipped?1:0,0,0]),u32(extra.length),extra]);
+  return {header,data:channels.map(c=>c.bytes)};
+ }
+ const records=[layer('A',false),layer('B',true)],info=Buffer.concat([s16(2),...records.map(x=>x.header),...records.flatMap(x=>x.data)]),lm=Buffer.concat([u32(info.length),info]);
+ return Buffer.concat([Buffer.from('8BPS'),u16(1),Buffer.alloc(6),u16(4),u32(1),u32(1),u16(8),u16(3),u32(0),u32(0),u32(lm.length),lm]);
+}
+
 test('web editor loads, edits a key and restores project',async()=>{
  const server=spawn('python3',['-m','http.server','18765','--bind','127.0.0.1','--directory','web'],{stdio:'ignore'});
  let browser;
@@ -39,6 +53,14 @@ test('web editor loads, edits a key and restores project',async()=>{
   assert.equal(await page.locator('#params .parameter').count(),1);
   await page.keyboard.press('m');
   assert.equal(await page.locator('#mode-mesh').getAttribute('aria-pressed'),'true');
+  await page.locator('#psd-input').setInputFiles({name:'clipping.psd',mimeType:'image/vnd.adobe.photoshop',buffer:clippedFixture()});
+  await page.waitForFunction(()=>document.querySelector('#part-count').textContent==='3');
+  await page.waitForTimeout(1000);
+  const saved=await page.evaluate(()=>new Promise((resolve,reject)=>{const q=indexedDB.open('my-live2d-web',1);q.onerror=()=>reject(q.error);q.onsuccess=()=>{const db=q.result,t=db.transaction('state'),req=t.objectStore('state').get('active');req.onsuccess=()=>{db.close();resolve(req.result)};req.onerror=()=>reject(req.error)}}));
+  const clipped=saved.parts.find(p=>p.clipBase);
+  assert.ok(clipped);assert.equal(clipped.blend,'multiply');assert.ok(saved.parts.some(p=>p.id===clipped.clipBase));
+  await page.reload({waitUntil:'networkidle'});
+  assert.equal(await page.locator('#part-count').innerText(),'3');
   assert.deepEqual(errors,[]);
   await page.setViewportSize({width:390,height:844});
   await page.locator('[data-panel="inspector-panel"]').click();

@@ -118,7 +118,7 @@ function channelRect(record,channel){
 }
 
 async function paintLayer(bytes,record,docWidth,docHeight,parent){
-  const result=createLayer(record.name,record.width,record.height,parent),context=result.canvas.getContext('2d');result.left=record.left;result.top=record.top;
+  const result=createLayer(record.name,record.width,record.height,parent),context=result.canvas.getContext('2d');result.left=record.left;result.top=record.top;result.importId=record.importId;result.clipBaseId=record.clipBaseId;
   result.visible=!record.hidden;result.opacity=record.opacity;result.blend=record.blend;result.clip=record.clipped;result.alphaLock=record.alphaLock;
   if(record.width&&record.height){
     const image=context.createImageData(record.width,record.height),pixels=image.data;
@@ -152,7 +152,16 @@ function buildLayerTree(records){
     else if(record.section===3){if(stack.length>1)stack.pop();}
     else stack[stack.length-1].children.push({kind:'paint',record});
   }
-  return roots;
+  function prepare(nodes){
+    nodes.reverse();let base=null;
+    for(const node of nodes){
+      if(node.kind==='group'){prepare(node.children);base=null;continue}
+      const record=node.record;record.importId=id();
+      if(record.clipped){if(!base)fail('psdUnsupportedLayers');record.clipBaseId=base.importId}
+      else base=record;
+    }
+  }
+  prepare(roots);return roots;
 }
 
 async function inflateComposite(bytes,offset,width,height,channels){
@@ -189,8 +198,8 @@ async function readPsd(buffer,name='Imported PSD'){
     reader.offset=layerMaskEnd;
   }
   const paintCount=records.filter(record=>record.section!==1&&record.section!==2&&record.section!==3).length;
-  if(paintCount>32||records.some(r=>r.width>2048||r.height>2048)||records.filter(r=>!r.section).reduce((sum,r)=>sum+r.width*r.height,0)>16777216)fail('psdMemory');
-  if(records.some(r=>r.unsupported||r.clipped||(r.section!==3&&r.blendKey!=='norm'&&r.blendKey!=='pass')||((r.section===1||r.section===2)&&r.opacity!==1)||r.channels.some(c=>c.id===-3)))fail('psdUnsupportedLayers');
+  if(paintCount>128||records.some(r=>r.width>2048||r.height>2048)||records.filter(r=>!r.section).reduce((sum,r)=>sum+r.width*r.height,0)>16777216)fail('psdMemory');
+  if(records.some(r=>r.unsupported||(r.section!==3&&r.blendKey!=='norm'&&r.blendKey!=='pass'&&r.blendKey!=='mul ')||((r.section===1||r.section===2)&&r.opacity!==1)||r.channels.some(c=>c.id===-3)))fail('psdUnsupportedLayers');
   const document={id:id(),name:String(name).slice(0,100)||'Imported PSD',width,height,background:'transparent',revision:0,updated:Date.now(),layers:[],active:''};
   const tree=buildLayerTree(records);let nestedGroups=0;
   const addPaint=async(record,parent,path=[],visible=true,opacity=1)=>{

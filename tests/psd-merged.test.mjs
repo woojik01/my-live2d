@@ -2,7 +2,7 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {deflateSync} from 'node:zlib';
 globalThis.document={createElement(){const context={createImageData(w,h){return {data:new Uint8ClampedArray(w*h*4)}},putImageData(image){this.image=image},drawImage(source){this.image=source.getContext('2d').image}};return {width:0,height:0,getContext(){return context}}}};
-const {readPsdMerged}=await import('../web/psd.mjs');
+const {readPsd,readPsdMerged}=await import('../web/psd.mjs');
 const u16=n=>{const b=Buffer.alloc(2);b.writeUInt16BE(n);return b};
 const s16=n=>{const b=Buffer.alloc(2);b.writeInt16BE(n);return b};
 const u32=n=>{const b=Buffer.alloc(4);b.writeUInt32BE(n);return b};
@@ -31,3 +31,23 @@ test('unsupported merged colour modes fail explicitly',async()=>{
  await assert.rejects(readPsdMerged(fixture({mode:4,channels:[1,2,3,4]})),e=>e.code==='psdUnsupported');
 });
 
+
+test('layered PSD preserves bottom-to-top ordering and clipping base',async()=>{
+ const i32=n=>{const b=Buffer.alloc(4);b.writeInt32BE(n);return b};
+ const record=(name,section,clip=false)=>{
+  const group=section!==null, data=group?[]:[0,1,2,-1].map((id,i)=>({id,data:Buffer.concat([u16(0),Buffer.from([i===3?255:50+i])])}));
+  const nam=Buffer.from(name),pas=Buffer.alloc(Math.ceil((nam.length+1)/4)*4);pas[0]=nam.length;nam.copy(pas,1);
+  const sectionData=group?Buffer.concat([Buffer.from('8BIMlsct'),u32(4),u32(section)]):Buffer.alloc(0);
+  const extra=Buffer.concat([u32(0),u32(0),pas,sectionData]);
+  const header=Buffer.concat([i32(0),i32(0),i32(group?0:1),i32(group?0:1),u16(data.length),...data.map(c=>Buffer.concat([s16(c.id),u32(c.data.length)])),Buffer.from('8BIMnorm'),Buffer.from([255,clip?1:0,0,0]),u32(extra.length),extra]);
+  return {header,data:data.map(x=>x.data)};
+ };
+ const records=[record('end',3),record('base',null),record('clip',null,true),record('group',2)];
+ const info=Buffer.concat([s16(records.length),...records.map(x=>x.header),...records.flatMap(x=>x.data)]);
+ const lm=Buffer.concat([u32(info.length),info]);
+ const file=Buffer.concat([Buffer.from('8BPS'),u16(1),Buffer.alloc(6),u16(4),u32(1),u32(1),u16(8),u16(3),u32(0),u32(0),u32(lm.length),lm]);
+ const result=await readPsd(file.buffer.slice(file.byteOffset,file.byteOffset+file.byteLength));
+ const layers=result.document.layers.filter(x=>x.type==='paint');
+ assert.deepEqual(layers.map(x=>x.name),['base','clip']);
+ assert.equal(layers[1].clipBaseId,layers[0].importId);
+});

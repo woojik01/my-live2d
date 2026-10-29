@@ -7,3 +7,9 @@ test('warp and rotation hierarchy round-trips coordinates',()=>{let [p,part]=fix
 test('invalid hierarchy and key vertex counts are rejected',()=>{let [p,part]=fixture(),a=R.makeDeformer('rotation',null),b=R.makeDeformer('rotation',a.id);a.parent=b.id;p.deformers.push(a,b);assert.throws(()=>R.validate(p));a.parent=null;let par=R.makeParameter('x');p.parameters.push(par);par.bindings[part.id]={keys:[{value:0,pose:{vertices:[R.V()]}}]};assert.throws(()=>R.validate(p))});
 test('two-dimensional correction is additive and bilinear',()=>{let [p,part]=fixture(),x=R.makeParameter('x',0,0,1),y=R.makeParameter('y',0,0,1);p.parameters.push(x,y);x.value=1;y.value=1;R.record(p,part.id,x.id,{vertices:part.mesh.vertices.map(v=>R.add(v,R.V(10,0)))});let before=R.evaluate(p,part).vertices[0],c=R.createCombination(p,part.id,x.id,y.id),pose=R.combinationDraft(p,c,part);pose.vertices=pose.vertices.map(v=>R.add(v,R.V(8,4)));R.recordCombination(p,c,part,pose);assert.deepEqual(R.evaluate(p,part).vertices[0],R.add(before,R.V(8,4)));x.value=.5;y.value=.5;let out=R.sampleCombination(p,c);assert.equal(out.points[0].x,2);assert.equal(out.points[0].y,1);assert.throws(()=>R.recordCombination(p,c,part,pose))});
 test('import rejects unsafe external images',()=>{let [p]=fixture();p.assets[0].src='https://example.com/a.png';assert.throws(()=>R.validate(p))});
+
+test('clipped and multiply parts remain valid across project serialization',()=>{
+ const [p,base]=fixture(),part=R.makePart('클리핑',p.assets[0]);part.clipBase=base.id;part.blend='multiply';p.parts.push(part);
+ assert.doesNotThrow(()=>R.validate(JSON.parse(JSON.stringify(p))));
+ part.clipBase=part.id;assert.throws(()=>R.validate(p));
+});
